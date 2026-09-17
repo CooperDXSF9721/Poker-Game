@@ -118,7 +118,7 @@ const btnRaise = document.getElementById('btn-raise');
 const raiseInput = document.getElementById('raise-amount');
 const messageBoard = document.getElementById('message-board');
 
-// UI Toggle for Mode Selection
+// UI Mode Selection
 hostGameModeSelect.addEventListener('change', () => {
   if (hostGameModeSelect.value === 'quick') {
     buyinGroup.style.display = 'none';
@@ -127,7 +127,115 @@ hostGameModeSelect.addEventListener('change', () => {
   }
 });
 
-// ---------------- LOBBY & NETWORKING ----------------
+// ---------------- PUBLIC MATCHMAKING LOGIC ----------------
+document.querySelectorAll('.btn-public').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const buyIn = parseInt(btn.dataset.buyin, 10);
+    joinPublicTable(buyIn);
+  });
+});
+
+function joinPublicTable(buyIn) {
+  myName = playerNameInput.value.trim() || "Player";
+  currentSessionMode = 'ranked';
+  currentSessionBuyIn = buyIn;
+
+  if (playerBankroll < buyIn) {
+    lobbyStatus.textContent = `Insufficient Bankroll! You need $${buyIn.toLocaleString()} to join.`;
+    return;
+  }
+
+  const publicRoomCode = `PUBLIC_POKER_${buyIn}`;
+  lobbyStatus.textContent = `Connecting to ${publicRoomCode}...`;
+
+  peer = new Peer();
+
+  peer.on('open', (id) => {
+    myPeerId = id;
+    hostConn = peer.connect(publicRoomCode);
+
+    let connected = false;
+
+    hostConn.on('open', () => {
+      connected = true;
+      deductBuyIn(buyIn);
+      displayRoomCode.textContent = publicRoomCode;
+      lobbyModal.style.display = 'none';
+      hostConn.send({ type: 'JOIN', name: myName, id: myPeerId });
+    });
+
+    hostConn.on('data', (data) => {
+      if (data.type === 'SYNC') {
+        gameState = data.state;
+        renderUI();
+      }
+    });
+
+    // If room doesn't exist, claim the public host role
+    setTimeout(() => {
+      if (!connected) {
+        peer.destroy();
+        hostPublicTable(publicRoomCode, buyIn);
+      }
+    }, 1500);
+  });
+
+  peer.on('error', () => {
+    hostPublicTable(publicRoomCode, buyIn);
+  });
+}
+
+function hostPublicTable(roomCode, buyIn) {
+  lobbyStatus.textContent = `Creating Public Table for $${buyIn}...`;
+  deductBuyIn(buyIn);
+
+  isHost = true;
+  peer = new Peer(roomCode);
+
+  peer.on('open', (id) => {
+    myPeerId = id;
+    displayRoomCode.textContent = roomCode;
+    lobbyModal.style.display = 'none';
+
+    gameState.mode = 'ranked';
+    gameState.buyIn = buyIn;
+
+    gameState.players.push({
+      id: myPeerId,
+      name: myName,
+      chips: buyIn,
+      currentBet: 0,
+      hand: [],
+      folded: false,
+      allIn: false,
+      actedThisRound: false
+    });
+
+    renderUI();
+  });
+
+  peer.on('connection', (conn) => {
+    connections.push(conn);
+    conn.on('data', (data) => handleHostReceiveData(conn, data));
+    conn.on('close', () => {
+      gameState.players = gameState.players.filter(p => p.id !== conn.peer);
+      broadcastState();
+    });
+  });
+
+  peer.on('error', (err) => {
+    lobbyStatus.textContent = "Public room busy, retrying...";
+  });
+}
+
+function deductBuyIn(amount) {
+  playerBankroll -= amount;
+  initialBuyInPaid = amount;
+  localStorage.setItem('poker_bankroll', playerBankroll);
+  updateBankrollUI();
+}
+
+// ---------------- PRIVATE ROOM HOST & JOIN ----------------
 btnCreateRoom.addEventListener('click', () => {
   myName = playerNameInput.value.trim() || "Host";
   currentSessionMode = hostGameModeSelect.value;
@@ -143,10 +251,7 @@ btnCreateRoom.addEventListener('click', () => {
       lobbyStatus.textContent = `Insufficient bankroll! You need $${currentSessionBuyIn}.`;
       return;
     }
-    playerBankroll -= currentSessionBuyIn;
-    initialBuyInPaid = currentSessionBuyIn;
-    localStorage.setItem('poker_bankroll', playerBankroll);
-    updateBankrollUI();
+    deductBuyIn(currentSessionBuyIn);
   }
 
   isHost = true;
@@ -185,10 +290,6 @@ btnCreateRoom.addEventListener('click', () => {
       broadcastState();
     });
   });
-
-  peer.on('error', () => {
-    lobbyStatus.textContent = "Error creating room. Try again.";
-  });
 });
 
 btnJoinRoom.addEventListener('click', () => {
@@ -219,10 +320,7 @@ btnJoinRoom.addEventListener('click', () => {
             peer.destroy();
             return;
           }
-          playerBankroll -= currentSessionBuyIn;
-          initialBuyInPaid = currentSessionBuyIn;
-          localStorage.setItem('poker_bankroll', playerBankroll);
-          updateBankrollUI();
+          deductBuyIn(currentSessionBuyIn);
         }
 
         displayRoomCode.textContent = code;
@@ -232,10 +330,6 @@ btnJoinRoom.addEventListener('click', () => {
         gameState = data.state;
         renderUI();
       }
-    });
-
-    hostConn.on('error', () => {
-      lobbyStatus.textContent = "Could not connect to room.";
     });
   });
 });
@@ -297,7 +391,7 @@ function handleHostReceiveData(conn, data) {
       allIn: false,
       actedThisRound: false
     });
-    gameState.message = `${data.name} joined the table ($${gameState.buyIn} buy-in).`;
+    gameState.message = `${data.name} joined the table.`;
     broadcastState();
   } else if (data.type === 'ACTION') {
     handlePlayerActionHost(data.id, data.action, data.totalBetTarget);
@@ -729,5 +823,5 @@ function evaluate5CardHand(hand) {
   return ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
 }
 
-// Initial Boot
+// Boot
 updateBankrollUI();
