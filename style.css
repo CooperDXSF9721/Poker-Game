@@ -199,6 +199,12 @@ body {
   border: 1px solid rgba(255,255,255,0.2);
 }
 
+.status-badge.active-turn {
+  border-color: #ffd700;
+  box-shadow: 0 0 10px #ffd700;
+  background: rgba(255, 215, 0, 0.2);
+}
+
 .cards { display: flex; gap: 6px; min-height: 75px; }
 
 .card {
