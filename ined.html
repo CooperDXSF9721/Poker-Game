@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texas Hold'em</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="game">
+
+        <header>
+            <h1>Texas Hold'em</h1>
+            <div class="pot">
+                Pot: <span id="pot">$0</span>
+            </div>
+        </header>
+
+        <main class="table">
+
+            <!-- BOT 1 -->
+            <div class="player bot bot-1">
+                <div class="player-name">Bot 1</div>
+                <div class="chips">$1,000</div>
+                <div class="cards">
+                    <div class="card hidden">?</div>
+                    <div class="card hidden">?</div>
+                </div>
+                <div class="action" id="bot1-action"></div>
+            </div>
+
+            <!-- BOT 2 -->
+            <div class="player bot bot-2">
+                <div class="player-name">Bot 2</div>
+                <div class="chips">$1,000</div>
+                <div class="cards">
+                    <div class="card hidden">?</div>
+                    <div class="card hidden">?</div>
+                </div>
+                <div class="action" id="bot2-action"></div>
+            </div>
+
+            <!-- COMMUNITY CARDS -->
+            <div class="community">
+                <div class="cards" id="community-cards">
+                    <div class="card empty"></div>
+                    <div class="card empty"></div>
+                    <div class="card empty"></div>
+                    <div class="card empty"></div>
+                    <div class="card empty"></div>
+                </div>
+
+                <div class="stage" id="stage">
+                    Waiting to start
+                </div>
+            </div>
+
+            <!-- BOT 3 -->
+            <div class="player bot bot-3">
+                <div class="player-name">Bot 3</div>
+                <div class="chips">$1,000</div>
+                <div class="cards">
+                    <div class="card hidden">?</div>
+                    <div class="card hidden">?</div>
+                </div>
+                <div class="action" id="bot3-action"></div>
+            </div>
+
+            <!-- PLAYER -->
+            <div class="player human">
+
+                <div class="player-name">You</div>
+
+                <div class="chips">
+                    $<span id="player-chips">1,000</span>
+                </div>
+
+                <div class="cards" id="player-cards">
+                    <div class="card empty"></div>
+                    <div class="card empty"></div>
+                </div>
+
+                <div class="action" id="player-action"></div>
+
+            </div>
+
+        </main>
+
+        <!-- CONTROLS -->
+        <section class="controls">
+
+            <button id="new-game">New Hand</button>
+
+            <button id="fold" disabled>
+                Fold
+            </button>
+
+            <button id="check" disabled>
+                Check
+            </button>
+
+            <button id="call" disabled>
+                Call
+            </button>
+
+            <button id="raise" disabled>
+                Raise
+            </button>
+
+        </section>
+
+        <section class="game-info">
+
+            <div>
+                <strong>Current hand:</strong>
+                <span id="hand-status">No hand started</span>
+            </div>
+
+            <div>
+                <strong>Current bet:</strong>
+                $<span id="current-bet">0</span>
+            </div>
+
+        </section>
+
+    </div>
+
+    <script src="game.js"></script>
+
+</body>
+</html>
