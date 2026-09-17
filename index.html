@@ -4,8 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Multiplayer Texas Hold'em</title>
-  <link rel="stylesheet" href="style.css?v=4">
-  <!-- PeerJS Library for WebRTC P2P Multiplayer -->
+  <link rel="stylesheet" href="style.css?v=5">
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
@@ -34,14 +33,27 @@
 
       <hr class="divider">
 
-      <!-- Host Game Options -->
+      <!-- Public Rooms Selection -->
       <div class="lobby-section">
-        <h3>Host a Game</h3>
+        <h3>Public Matchmaking Tables</h3>
+        <p class="sub-text">Always open! Pick your stakes and play using your Bankroll.</p>
+        <div class="public-tables-grid">
+          <button class="btn btn-public" data-buyin="200">Low Stakes ($200 Buy-In)</button>
+          <button class="btn btn-public" data-buyin="1000">Med Stakes ($1,000 Buy-In)</button>
+          <button class="btn btn-public" data-buyin="5000">High Stakes ($5,000 Buy-In)</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Custom Host Game Options -->
+      <div class="lobby-section">
+        <h3>Host Private Room</h3>
         <div class="input-group">
-          <label>Game Mode:</label>
+          <label>Chip Mode:</label>
           <select id="host-game-mode">
-            <option value="ranked">Ranked (Uses Bankroll)</option>
-            <option value="quick">Quick Match (Equal Free Chips)</option>
+            <option value="ranked">Use Real Bankroll</option>
+            <option value="quick">Quick Match (Free $1,000 Equal Chips)</option>
           </select>
         </div>
         
@@ -50,16 +62,16 @@
           <input type="number" id="host-buyin-input" min="100" step="100" value="1000">
         </div>
 
-        <button id="btn-create-room" class="btn lg">Create Room</button>
+        <button id="btn-create-room" class="btn lg">Create Private Room</button>
       </div>
 
       <hr class="divider">
 
-      <!-- Join Game Options -->
+      <!-- Private Join Options -->
       <div class="lobby-section">
-        <h3>Join a Game</h3>
+        <h3>Join Private Room</h3>
         <input type="text" id="join-code-input" placeholder="Enter Room Code">
-        <button id="btn-join-room" class="btn lg secondary">Join Room</button>
+        <button id="btn-join-room" class="btn lg secondary">Join Private Room</button>
       </div>
 
       <div id="lobby-status"></div>
@@ -110,6 +122,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=4"></script>
+  <script src="game.js?v=5"></script>
 </body>
 </html>
