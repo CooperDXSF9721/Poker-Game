@@ -31,9 +31,10 @@ body {
   border-radius: 12px;
   padding: 24px;
   width: 90%;
-  max-width: 440px;
+  max-width: 460px;
   text-align: center;
   box-shadow: 0 0 25px rgba(0,0,0,0.9);
+  margin: 20px 0;
 }
 
 .lobby-box h2 { color: #ffd700; margin-bottom: 12px; }
@@ -89,27 +90,40 @@ body {
   font-size: 0.95rem;
 }
 
-.public-tables-grid {
+.public-tier {
+  text-align: left;
+  margin-bottom: 8px;
+}
+
+.public-tier label {
+  font-size: 0.75rem;
+  color: #aaa;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.tier-input-group {
   display: flex;
-  flex-direction: column;
   gap: 8px;
+}
+
+.tier-input-group input {
+  flex: 1;
 }
 
 .btn-public {
   background-color: #2e7d32;
   color: white;
-  padding: 10px;
-  font-size: 0.9rem;
+  padding: 8px 12px;
+  font-size: 0.85rem;
   font-weight: bold;
   border-radius: 6px;
   border: 1px solid #4caf50;
   cursor: pointer;
-  transition: 0.2s;
+  white-space: nowrap;
 }
 
-.btn-public:hover {
-  background-color: #388e3c;
-}
+.btn-public:hover { background-color: #388e3c; }
 
 .lobby-section {
   display: flex;
@@ -185,11 +199,7 @@ body {
   border: 1px solid rgba(255,255,255,0.2);
 }
 
-.cards {
-  display: flex;
-  gap: 6px;
-  min-height: 75px;
-}
+.cards { display: flex; gap: 6px; min-height: 75px; }
 
 .card {
   width: 50px;
@@ -248,7 +258,7 @@ body {
 #raise-group { display: flex; align-items: center; gap: 4px; }
 
 #raise-amount {
-  width: 70px;
+  width: 80px;
   padding: 8px;
   font-size: 0.85rem;
   border-radius: 5px;
