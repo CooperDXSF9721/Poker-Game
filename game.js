@@ -190,11 +190,12 @@ function joinPublicTable(buyIn) {
     hostConn.on('data', (data) => {
       if (data.type === 'SYNC') {
         gameState = data.state;
+        bigBlind = gameState.bigBlind;
+        smallBlind = gameState.smallBlind;
         renderUI();
       }
     });
 
-    // If no host exists, claim the host role
     setTimeout(() => {
       if (!connected) {
         peer.destroy();
@@ -492,10 +493,14 @@ function startNewHandHost() {
   postBetHost(gameState.players[sbIdx], smallBlind);
   postBetHost(gameState.players[bbIdx], bigBlind);
 
+  // Mark blind posters as needing to act unless they went all in
+  gameState.players[sbIdx].actedThisRound = false;
+  gameState.players[bbIdx].actedThisRound = false;
+
   gameState.activePlayerIndex = UTGIdx;
   gameState.lastRaiserIndex = bbIdx;
   gameState.gameStage = 'preflop';
-  gameState.message = `Hand started! SB: ${gameState.players[sbIdx].name} ($${smallBlind}), BB: ${gameState.players[bbIdx].name} ($${bigBlind}).`;
+  gameState.message = `Hand started! SB: ${gameState.players[sbIdx].name} ($${smallBlind}), BB: ${gameState.players[bbIdx].name} ($${bigBlind}). Action: ${gameState.players[UTGIdx].name}`;
 
   broadcastState();
 }
@@ -513,9 +518,10 @@ function postBetHost(player, amount) {
 
 function getNextActivePlayerIndex(fromIdx) {
   let idx = (fromIdx + 1) % gameState.players.length;
-  while (gameState.players[idx].folded || gameState.players[idx].allIn) {
-    if (idx === fromIdx) break;
+  let count = 0;
+  while ((gameState.players[idx].folded || gameState.players[idx].allIn) && count < gameState.players.length) {
     idx = (idx + 1) % gameState.players.length;
+    count++;
   }
   return idx;
 }
@@ -541,7 +547,6 @@ function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
     postBetHost(player, callAmount);
     gameState.message = `${player.name} called $${callAmount}.`;
   } else if (action === 'raise') {
-    const raiseIncrement = totalBetTarget - gameState.currentHighBet;
     const additionalChipsNeeded = totalBetTarget - player.currentBet;
 
     if (additionalChipsNeeded > player.chips) {
@@ -550,11 +555,20 @@ function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
       return;
     }
 
+    const raiseIncrement = totalBetTarget - gameState.currentHighBet;
     postBetHost(player, additionalChipsNeeded);
+
     gameState.minRaiseAmount = Math.max(bigBlind, raiseIncrement);
     gameState.currentHighBet = player.currentBet;
     gameState.lastRaiserIndex = gameState.activePlayerIndex;
     gameState.message = `${player.name} raised to $${player.currentBet}.`;
+
+    // Reset acted status for other active non-all-in players on a raise
+    gameState.players.forEach((p, idx) => {
+      if (idx !== gameState.activePlayerIndex && !p.folded && !p.allIn) {
+        p.actedThisRound = false;
+      }
+    });
   }
 
   player.actedThisRound = true;
@@ -584,6 +598,7 @@ function moveToNextPlayerHost() {
     advanceStageHost();
   } else {
     gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.activePlayerIndex);
+    gameState.message += ` Turn: ${gameState.players[gameState.activePlayerIndex].name}`;
     broadcastState();
   }
 }
@@ -718,13 +733,18 @@ function renderUI() {
 
   gameState.players.forEach((p, idx) => {
     const isHero = p.id === myPeerId;
+    const isTurn = idx === gameState.activePlayerIndex && gameState.gameStage !== 'idle';
+    
     let statusText = "";
     if (idx === gameState.dealerIndex) statusText += " (D)";
     if (p.folded) statusText += " [FOLD]";
     if (p.allIn) statusText += " [ALL-IN]";
 
     if (isHero) {
-      document.getElementById('hero-name').textContent = `${p.name} (You)${statusText}`;
+      const heroBadge = document.getElementById('hero-name');
+      heroBadge.textContent = `${p.name} (You)${statusText}`;
+      heroBadge.className = `status-badge ${isTurn ? 'active-turn' : ''}`;
+
       document.getElementById('hero-chips').textContent = p.chips;
       document.getElementById('hero-bet').textContent = p.currentBet;
 
@@ -735,7 +755,7 @@ function renderUI() {
       const oppDiv = document.createElement('div');
       oppDiv.className = 'player-area';
       oppDiv.innerHTML = `
-        <div class="status-badge">${p.name}${statusText}</div>
+        <div class="status-badge ${isTurn ? 'active-turn' : ''}">${p.name}${statusText}</div>
         <div class="cards" id="cards-opp-${idx}"></div>
         <div class="chips">Chips: $${p.chips}</div>
         <div class="bet">Bet: $${p.currentBet}</div>
@@ -758,16 +778,16 @@ function renderUI() {
 
     btnFold.disabled = false;
     btnCheck.disabled = amountToCall > 0;
-    btnCall.disabled = amountToCall === 0;
+    btnCall.disabled = amountToCall <= 0;
     btnCall.textContent = amountToCall > 0 ? `Call $${Math.min(amountToCall, hero.chips)}` : 'Call';
 
-    const minRaiseTotal = gameState.currentHighBet + gameState.minRaiseAmount;
+    const minRaiseTotal = gameState.currentHighBet === 0 ? bigBlind : gameState.currentHighBet + gameState.minRaiseAmount;
     const maxRaiseTotal = hero.currentBet + hero.chips;
 
     raiseInput.min = minRaiseTotal;
     raiseInput.step = bigBlind;
     if (parseInt(raiseInput.value, 10) < minRaiseTotal) {
-      raiseInput.value = minRaiseTotal;
+      raiseInput.value = Math.min(minRaiseTotal, maxRaiseTotal);
     }
 
     btnRaise.disabled = hero.chips <= amountToCall;
