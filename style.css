@@ -14,9 +14,68 @@ body {
   color: #fff;
 }
 
+/* Lobby Modal */
+#lobby-modal {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.lobby-box {
+  background: #222;
+  border: 2px solid #ffd700;
+  border-radius: 12px;
+  padding: 30px;
+  width: 90%;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(0,0,0,0.8);
+}
+
+.lobby-box h2 { color: #ffd700; margin-bottom: 8px; }
+.lobby-box p { font-size: 0.85rem; color: #ccc; margin-bottom: 20px; }
+
+.input-group {
+  margin-bottom: 15px;
+  text-align: left;
+}
+
+.input-group label { display: block; font-size: 0.8rem; margin-bottom: 4px; }
+.input-group input, .lobby-actions input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #111;
+  color: #fff;
+  text-align: center;
+  font-size: 1rem;
+}
+
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.or-divider { font-size: 0.8rem; color: #777; margin: 5px 0; }
+
+#lobby-status {
+  margin-top: 15px;
+  font-size: 0.85rem;
+  color: #ffd700;
+  min-height: 20px;
+}
+
+/* Poker Table Layout */
 #poker-table {
   width: 95%;
-  max-width: 1000px;
+  max-width: 1050px;
   height: 720px;
   background: radial-gradient(circle, #2d8a4e 0%, #154526 100%);
   border: 16px solid #4a2e1b;
@@ -26,13 +85,28 @@ body {
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
+  padding: 15px 20px;
+  position: relative;
 }
 
-#top-opponents {
+#room-info-bar {
+  position: absolute;
+  top: 20px;
+  left: 30px;
+  background: rgba(0,0,0,0.7);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#opponents-container {
   display: flex;
   justify-content: space-around;
   width: 100%;
+  margin-top: 25px;
 }
 
 .player-area {
@@ -54,12 +128,12 @@ body {
 .cards {
   display: flex;
   gap: 6px;
-  min-height: 80px;
+  min-height: 75px;
 }
 
 .card {
-  width: 54px;
-  height: 78px;
+  width: 50px;
+  height: 72px;
   background-color: white;
   border-radius: 5px;
   display: flex;
@@ -67,7 +141,7 @@ body {
   justify-content: space-between;
   padding: 4px;
   font-weight: bold;
-  font-size: 1rem;
+  font-size: 0.95rem;
   box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
 }
 
@@ -81,62 +155,42 @@ body {
   border: 2px solid #fff;
 }
 
-.card-suit {
-  align-self: flex-end;
-  font-size: 1.1rem;
-}
+.card-suit { align-self: flex-end; font-size: 1rem; }
 
 #table-center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 #pot-container {
   background: rgba(0, 0, 0, 0.6);
-  padding: 6px 20px;
+  padding: 4px 18px;
   border-radius: 20px;
   border: 2px solid #ffd700;
 }
 
-#pot-label {
-  color: #ffd700;
-  font-weight: bold;
-  font-size: 1.2rem;
-}
+#pot-label { color: #ffd700; font-weight: bold; font-size: 1.1rem; }
 
-#community-cards {
-  display: flex;
-  gap: 8px;
-  min-height: 80px;
-}
+#community-cards { display: flex; gap: 8px; min-height: 75px; }
 
 #message-board {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   background: rgba(0,0,0,0.8);
-  padding: 8px 16px;
+  padding: 6px 14px;
   border-radius: 8px;
   text-align: center;
   max-width: 90%;
 }
 
-#controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-#raise-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
+#controls { display: flex; align-items: center; gap: 8px; }
+#raise-group { display: flex; align-items: center; gap: 4px; }
 
 #raise-amount {
-  width: 75px;
+  width: 70px;
   padding: 8px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   border-radius: 5px;
   border: 1px solid #ccc;
   text-align: center;
@@ -146,19 +200,19 @@ body {
   background-color: #2196F3;
   color: white;
   border: none;
-  padding: 10px 16px;
+  padding: 8px 14px;
   font-size: 0.85rem;
   font-weight: bold;
   border-radius: 5px;
   cursor: pointer;
-  transition: background-color 0.2s;
 }
 
-.btn:hover:not(:disabled) { background-color: #0b7dda; }
+.btn.lg { width: 100%; padding: 12px; font-size: 1rem; }
+.btn.secondary { background-color: #f57c00; }
+.btn-sm { background: #444; color: #fff; border: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+
+.btn:hover:not(:disabled) { opacity: 0.9; }
 .btn:disabled { background-color: #444; opacity: 0.5; cursor: not-allowed; }
 
 #btn-fold { background-color: #f44336; }
-#btn-fold:hover:not(:disabled) { background-color: #da190b; }
-
 #btn-raise { background-color: #4CAF50; }
-#btn-raise:hover:not(:disabled) { background-color: #45a049; }
