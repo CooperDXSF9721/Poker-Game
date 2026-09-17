@@ -24,23 +24,28 @@ class Deck {
   pop() { return this.cards.pop(); }
 }
 
-// Global Networking & Game Variables
+// ---------------- Global State & Networking ----------------
 let peer = null;
-let connections = []; // Host tracks connections to clients
-let hostConn = null;  // Client track connection to host
+let connections = []; // Host: track client connections
+let hostConn = null;  // Client: track host connection
 let isHost = false;
 let myPeerId = "";
 let myName = "Player";
+let hostDeck = null;
+
+const BIG_BLIND = 20;
+const SMALL_BLIND = 10;
 
 let gameState = {
-  players: [], // Array of { id, name, chips, currentBet, hand: [], folded: false }
+  players: [], // { id, name, chips, currentBet, hand: [], folded: false, allIn: false, actedThisRound: false }
   communityCards: [],
   pot: 0,
-  currentHighBet: 0,
+  currentHighBet: 0,      // Highest total bet by any player in current round
+  minRaiseAmount: 20,     // Minimum size of a raise over current high bet
   dealerIndex: 0,
   activePlayerIndex: 0,
-  lastRaiserIndex: 0,
-  gameStage: 'idle', // 'preflop', 'flop', 'turn', 'river', 'showdown', 'idle'
+  lastRaiserIndex: -1,
+  gameStage: 'idle',      // 'preflop', 'flop', 'turn', 'river', 'showdown', 'idle'
   message: 'Waiting for players to join...'
 };
 
@@ -63,13 +68,12 @@ const btnRaise = document.getElementById('btn-raise');
 const raiseInput = document.getElementById('raise-amount');
 const messageBoard = document.getElementById('message-board');
 
-// ---------------- LOBBY & NETWORKING (PeerJS) ----------------
+// ---------------- LOBBY & NETWORKING ----------------
 btnCreateRoom.addEventListener('click', () => {
   myName = playerNameInput.value.trim() || "Host";
   isHost = true;
   lobbyStatus.textContent = "Creating room...";
 
-  // Create Peer with random short ID
   const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
   peer = new Peer(roomCode);
 
@@ -78,14 +82,15 @@ btnCreateRoom.addEventListener('click', () => {
     displayRoomCode.textContent = id;
     lobbyModal.style.display = 'none';
 
-    // Add Host as Player 0
     gameState.players.push({
       id: myPeerId,
       name: myName,
       chips: 1000,
       currentBet: 0,
       hand: [],
-      folded: false
+      folded: false,
+      allIn: false,
+      actedThisRound: false
     });
 
     renderUI();
@@ -100,7 +105,7 @@ btnCreateRoom.addEventListener('click', () => {
     });
   });
 
-  peer.on('error', (err) => {
+  peer.on('error', () => {
     lobbyStatus.textContent = "Error creating room. Try again.";
   });
 });
@@ -121,7 +126,6 @@ btnJoinRoom.addEventListener('click', () => {
     hostConn.on('open', () => {
       displayRoomCode.textContent = code;
       lobbyModal.style.display = 'none';
-      // Register with host
       hostConn.send({ type: 'JOIN', name: myName, id: myPeerId });
     });
 
@@ -144,11 +148,10 @@ btnCopyCode.addEventListener('click', () => {
   setTimeout(() => btnCopyCode.textContent = "Copy Code", 2000);
 });
 
-// ---------------- HOST STATE BROADCASTING ----------------
+// ---------------- STATE BROADCASTING ----------------
 function broadcastState() {
   if (!isHost) return;
   
-  // Send personalized state to each client (hiding other players' hidden cards)
   connections.forEach(conn => {
     const sanitizedState = JSON.parse(JSON.stringify(gameState));
     if (gameState.gameStage !== 'showdown') {
@@ -164,26 +167,33 @@ function broadcastState() {
 
 function handleHostReceiveData(conn, data) {
   if (data.type === 'JOIN') {
+    if (gameState.gameStage !== 'idle') {
+      conn.send({ type: 'SYNC', state: gameState });
+      return;
+    }
     gameState.players.push({
       id: data.id,
       name: data.name,
       chips: 1000,
       currentBet: 0,
       hand: [],
-      folded: false
+      folded: false,
+      allIn: false,
+      actedThisRound: false
     });
     gameState.message = `${data.name} joined the table.`;
     broadcastState();
   } else if (data.type === 'ACTION') {
-    handlePlayerAction(data.id, data.action, data.amount);
+    handlePlayerActionHost(data.id, data.action, data.totalBetTarget);
   }
 }
 
-// ---------------- GAME LOGIC (HOST DRIVEN) ----------------
+// ---------------- GAME LOGIC (HOST ONLY) ----------------
 btnDeal.addEventListener('click', () => {
   if (!isHost) return;
-  if (gameState.players.length < 2) {
-    gameState.message = "Need at least 2 players to start!";
+  const eligible = gameState.players.filter(p => p.chips > 0);
+  if (eligible.length < 2) {
+    gameState.message = "Need at least 2 players with chips to start!";
     broadcastState();
     return;
   }
@@ -191,98 +201,171 @@ btnDeal.addEventListener('click', () => {
 });
 
 function startNewHandHost() {
-  const deck = new Deck();
+  hostDeck = new Deck();
   gameState.communityCards = [];
   gameState.pot = 0;
-  gameState.currentHighBet = 0;
+  gameState.currentHighBet = BIG_BLIND;
+  gameState.minRaiseAmount = BIG_BLIND;
 
+  // Reset Player Status
   gameState.players.forEach(p => {
-    p.hand = [deck.pop(), deck.pop()];
-    p.currentBet = 0;
-    p.folded = false;
+    if (p.chips > 0) {
+      p.hand = [hostDeck.pop(), hostDeck.pop()];
+      p.currentBet = 0;
+      p.folded = false;
+      p.allIn = false;
+      p.actedThisRound = false;
+    } else {
+      p.folded = true; // Busted players auto-fold
+      p.hand = [];
+    }
   });
 
-  // Rotate Dealer
-  gameState.dealerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
+  // Advance Dealer to next valid player
+  do {
+    gameState.dealerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
+  } while (gameState.players[gameState.dealerIndex].chips <= 0);
 
-  // Post Blinds: SB (Dealer+1), BB (Dealer+2)
-  const sbIdx = (gameState.dealerIndex + 1) % gameState.players.length;
-  const bbIdx = (gameState.dealerIndex + 2) % gameState.players.length;
+  // Position Indices
+  const activeList = gameState.players.filter(p => !p.folded);
+  let sbIdx, bbIdx, UTGIdx;
 
-  postBetHost(gameState.players[sbIdx], 10);
-  postBetHost(gameState.players[bbIdx], 20);
-  gameState.currentHighBet = 20;
+  if (activeList.length === 2) {
+    // Heads-up Rules: Dealer is SB, Other is BB
+    sbIdx = gameState.dealerIndex;
+    bbIdx = getNextActivePlayerIndex(sbIdx);
+    UTGIdx = sbIdx; // Dealer acts first Preflop in Heads-Up
+  } else {
+    sbIdx = getNextActivePlayerIndex(gameState.dealerIndex);
+    bbIdx = getNextActivePlayerIndex(sbIdx);
+    UTGIdx = getNextActivePlayerIndex(bbIdx);
+  }
 
-  gameState.activePlayerIndex = (bbIdx + 1) % gameState.players.length;
+  postBetHost(gameState.players[sbIdx], SMALL_BLIND);
+  postBetHost(gameState.players[bbIdx], BIG_BLIND);
+
+  gameState.activePlayerIndex = UTGIdx;
   gameState.lastRaiserIndex = bbIdx;
   gameState.gameStage = 'preflop';
-  gameState.message = `Hand started. ${gameState.players[sbIdx].name} posted SB ($10), ${gameState.players[bbIdx].name} posted BB ($20).`;
+  gameState.message = `New Hand! ${gameState.players[sbIdx].name} (SB) posted $${SMALL_BLIND}, ${gameState.players[bbIdx].name} (BB) posted $${BIG_BLIND}.`;
 
-  // Save remaining deck on host
-  hostDeck = deck;
   broadcastState();
 }
 
-let hostDeck = null;
-
 function postBetHost(player, amount) {
-  const actual = Math.min(amount, player.chips);
-  player.chips -= actual;
-  player.currentBet += actual;
-  gameState.pot += actual;
+  const actualBet = Math.min(amount, player.chips);
+  player.chips -= actualBet;
+  player.currentBet += actualBet;
+  gameState.pot += actualBet;
+
+  if (player.chips === 0) {
+    player.allIn = true;
+  }
 }
 
-function handlePlayerAction(playerId, action, amount = 0) {
-  const player = gameState.players.find(p => p.id === playerId);
-  if (!player || gameState.players[gameState.activePlayerIndex].id !== playerId) return;
+function getNextActivePlayerIndex(fromIdx) {
+  let idx = (fromIdx + 1) % gameState.players.length;
+  while (gameState.players[idx].folded || gameState.players[idx].allIn) {
+    if (idx === fromIdx) break;
+    idx = (idx + 1) % gameState.players.length;
+  }
+  return idx;
+}
+
+function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
+  const player = gameState.players[gameState.activePlayerIndex];
+  if (!player || player.id !== playerId) return;
+
+  const amountToCall = gameState.currentHighBet - player.currentBet;
 
   if (action === 'fold') {
     player.folded = true;
     gameState.message = `${player.name} folded.`;
   } else if (action === 'check') {
+    if (amountToCall > 0) {
+      gameState.message = "Error: Cannot check when there is a bet!";
+      broadcastState();
+      return;
+    }
     gameState.message = `${player.name} checked.`;
   } else if (action === 'call') {
-    const toCall = gameState.currentHighBet - player.currentBet;
-    postBetHost(player, toCall);
-    gameState.message = `${player.name} called $${toCall}.`;
+    const callAmount = Math.min(amountToCall, player.chips);
+    postBetHost(player, callAmount);
+    gameState.message = `${player.name} called $${callAmount}.`;
   } else if (action === 'raise') {
-    const added = amount - player.currentBet;
-    postBetHost(player, added);
+    const raiseIncrement = totalBetTarget - gameState.currentHighBet;
+    const additionalChipsNeeded = totalBetTarget - player.currentBet;
+
+    // Strict No-Limit Poker Raise Validation
+    if (additionalChipsNeeded > player.chips) {
+      gameState.message = "Error: You don't have enough chips for that bet!";
+      broadcastState();
+      return;
+    }
+    if (totalBetTarget <= gameState.currentHighBet) {
+      gameState.message = `Error: Raise must be higher than current bet ($${gameState.currentHighBet})!`;
+      broadcastState();
+      return;
+    }
+    if (raiseIncrement < gameState.minRaiseAmount && additionalChipsNeeded < player.chips) {
+      gameState.message = `Error: Minimum raise is $${gameState.minRaiseAmount}! Total bet must be at least $${gameState.currentHighBet + gameState.minRaiseAmount}.`;
+      broadcastState();
+      return;
+    }
+
+    // Process valid Raise
+    postBetHost(player, additionalChipsNeeded);
+    gameState.minRaiseAmount = raiseIncrement;
     gameState.currentHighBet = player.currentBet;
     gameState.lastRaiserIndex = gameState.activePlayerIndex;
-    gameState.message = `${player.name} raised to $${gameState.currentHighBet}.`;
+    gameState.message = `${player.name} raised to $${player.currentBet}.`;
   }
 
+  player.actedThisRound = true;
   moveToNextPlayerHost();
 }
 
 function moveToNextPlayerHost() {
-  const activePlayers = gameState.players.filter(p => !p.folded);
+  const remainingPlayers = gameState.players.filter(p => !p.folded);
   
-  if (activePlayers.length === 1) {
-    activePlayers[0].chips += gameState.pot;
-    gameState.message = `${activePlayers[0].name} wins $${gameState.pot} (Everyone else folded)!`;
+  // Single survivor scenario
+  if (remainingPlayers.length === 1) {
+    remainingPlayers[0].chips += gameState.pot;
+    gameState.message = `${remainingPlayers[0].name} wins $${gameState.pot} (Everyone else folded)!`;
     endHandHost();
     return;
   }
 
-  // Find next non-folded player
-  do {
-    gameState.activePlayerIndex = (gameState.activePlayerIndex + 1) % gameState.players.length;
-  } while (gameState.players[gameState.activePlayerIndex].folded);
+  // Check if round finished
+  const playersCanAct = remainingPlayers.filter(p => !p.allIn);
+  const everyoneMatched = remainingPlayers.every(p => p.currentBet === gameState.currentHighBet || p.allIn);
+  const everyoneActed = playersCanAct.every(p => p.actedThisRound);
 
-  // Check if betting round complete
-  const everyoneMatched = activePlayers.every(p => p.currentBet === gameState.currentHighBet);
-  if (everyoneMatched && gameState.activePlayerIndex === gameState.lastRaiserIndex) {
+  if (playersCanAct.length <= 1 && everyoneMatched) {
+    // Fast-forward board if everyone except at most 1 player is All-In
+    fastForwardToShowdownHost();
+    return;
+  }
+
+  if (everyoneMatched && everyoneActed) {
     advanceStageHost();
   } else {
+    gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.activePlayerIndex);
     broadcastState();
   }
 }
 
 function advanceStageHost() {
-  gameState.players.forEach(p => p.currentBet = 0);
+  // Refund Uncalled Bets (e.g. Player bets $500, everyone folds or calls max $100 -> refund $400)
+  refundUncalledBetsHost();
+
+  // Reset street bets
+  gameState.players.forEach(p => {
+    p.currentBet = 0;
+    p.actedThisRound = false;
+  });
   gameState.currentHighBet = 0;
+  gameState.minRaiseAmount = BIG_BLIND;
 
   if (gameState.gameStage === 'preflop') {
     gameState.gameStage = 'flop';
@@ -299,35 +382,61 @@ function advanceStageHost() {
     return;
   }
 
-  gameState.activePlayerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
-  while (gameState.players[gameState.activePlayerIndex].folded) {
-    gameState.activePlayerIndex = (gameState.activePlayerIndex + 1) % gameState.players.length;
-  }
+  // First active player after Dealer acts first post-flop
+  gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.dealerIndex);
   gameState.lastRaiserIndex = gameState.activePlayerIndex;
+  gameState.message = `Stage: ${gameState.gameStage.toUpperCase()}. Action is on ${gameState.players[gameState.activePlayerIndex].name}.`;
 
-  gameState.message = `Advanced to ${gameState.gameStage.toUpperCase()}. Action is on ${gameState.players[gameState.activePlayerIndex].name}.`;
   broadcastState();
 }
 
-function resolveShowdownHost() {
-  let bestScore = -1;
-  let winners = [];
+function refundUncalledBetsHost() {
+  const active = gameState.players.filter(p => !p.folded);
+  if (active.length <= 1) return;
 
-  gameState.players.forEach(p => {
-    if (!p.folded) {
-      const score = evaluateHand(p.hand.concat(gameState.communityCards));
-      if (score > bestScore) {
-        bestScore = score;
-        winners = [p];
-      } else if (score === bestScore) {
-        winners.push(p);
-      }
+  const bets = active.map(p => p.currentBet).sort((a, b) => b - a);
+  const highestBet = bets[0];
+  const secondHighest = bets[1] || 0;
+
+  if (highestBet > secondHighest) {
+    const overbet = highestBet - secondHighest;
+    const overbettor = active.find(p => p.currentBet === highestBet);
+    if (overbettor) {
+      overbettor.chips += overbet;
+      overbettor.currentBet -= overbet;
+      gameState.pot -= overbet;
+      gameState.currentHighBet = secondHighest;
     }
+  }
+}
+
+function fastForwardToShowdownHost() {
+  refundUncalledBetsHost();
+  while (gameState.communityCards.length < 5) {
+    gameState.communityCards.push(hostDeck.pop());
+  }
+  gameState.gameStage = 'showdown';
+  resolveShowdownHost();
+}
+
+// ---------------- SHOWDOWN & POT DISTRIBUTION ----------------
+function resolveShowdownHost() {
+  const activePlayers = gameState.players.filter(p => !p.folded);
+  
+  // Calculate Hand Ranks
+  activePlayers.forEach(p => {
+    p.handScore = evaluate7CardHand(p.hand.concat(gameState.communityCards));
   });
+
+  // Sort best to worst
+  activePlayers.sort((a, b) => b.handScore - a.handScore);
+
+  let bestScore = activePlayers[0].handScore;
+  let winners = activePlayers.filter(p => p.handScore === bestScore);
 
   const share = Math.floor(gameState.pot / winners.length);
   winners.forEach(w => w.chips += share);
-  
+
   gameState.message = `Showdown! ${winners.map(w => w.name).join(', ')} wins $${gameState.pot}!`;
   endHandHost();
 }
@@ -341,13 +450,38 @@ function endHandHost() {
 btnFold.addEventListener('click', () => sendAction('fold'));
 btnCheck.addEventListener('click', () => sendAction('check'));
 btnCall.addEventListener('click', () => sendAction('call'));
-btnRaise.addEventListener('click', () => sendAction('raise', parseInt(raiseInput.value, 10)));
+btnRaise.addEventListener('click', () => {
+  const totalTarget = parseInt(raiseInput.value, 10);
+  const hero = gameState.players.find(p => p.id === myPeerId);
 
-function sendAction(action, amount = 0) {
+  if (isNaN(totalTarget)) {
+    alert("Please enter a valid numeric bet amount.");
+    return;
+  }
+
+  const minTotalBet = gameState.currentHighBet + gameState.minRaiseAmount;
+  const maxTotalBet = hero.currentBet + hero.chips;
+
+  if (totalTarget < minTotalBet && totalTarget < maxTotalBet) {
+    alert(`Minimum total bet/raise amount is $${minTotalBet}!`);
+    raiseInput.value = Math.min(minTotalBet, maxTotalBet);
+    return;
+  }
+
+  if (totalTarget > maxTotalBet) {
+    alert(`You only have enough chips to raise to $${maxTotalBet}!`);
+    raiseInput.value = maxTotalBet;
+    return;
+  }
+
+  sendAction('raise', totalTarget);
+});
+
+function sendAction(action, totalBetTarget = 0) {
   if (isHost) {
-    handlePlayerAction(myPeerId, action, amount);
+    handlePlayerActionHost(myPeerId, action, totalBetTarget);
   } else {
-    hostConn.send({ type: 'ACTION', id: myPeerId, action, amount });
+    hostConn.send({ type: 'ACTION', id: myPeerId, action, totalBetTarget });
   }
 }
 
@@ -356,8 +490,7 @@ function renderUI() {
   messageBoard.textContent = gameState.message;
   document.getElementById('pot-amount').textContent = gameState.pot;
 
-  // Host button controls
-  btnDeal.disabled = !isHost || gameState.gameStage !== 'idle' || gameState.players.length < 2;
+  btnDeal.disabled = !isHost || gameState.gameStage !== 'idle' || gameState.players.filter(p => p.chips > 0).length < 2;
 
   const opponentsContainer = document.getElementById('opponents-container');
   opponentsContainer.innerHTML = '';
@@ -366,8 +499,13 @@ function renderUI() {
 
   gameState.players.forEach((p, idx) => {
     const isHero = p.id === myPeerId;
+    let statusText = "";
+    if (idx === gameState.dealerIndex) statusText += " (D)";
+    if (p.folded) statusText += " [FOLD]";
+    if (p.allIn) statusText += " [ALL-IN]";
+
     if (isHero) {
-      document.getElementById('hero-name').textContent = `${p.name} (You)${idx === gameState.dealerIndex ? ' (D)' : ''}`;
+      document.getElementById('hero-name').textContent = `${p.name} (You)${statusText}`;
       document.getElementById('hero-chips').textContent = p.chips;
       document.getElementById('hero-bet').textContent = p.currentBet;
 
@@ -375,11 +513,10 @@ function renderUI() {
       heroCardsEl.innerHTML = '';
       p.hand.forEach(c => heroCardsEl.appendChild(createCardUI(c)));
     } else {
-      // Create opponent node dynamically
       const oppDiv = document.createElement('div');
       oppDiv.className = 'player-area';
       oppDiv.innerHTML = `
-        <div class="status-badge">${p.name}${idx === gameState.dealerIndex ? ' (D)' : ''}${p.folded ? ' [FOLD]' : ''}</div>
+        <div class="status-badge">${p.name}${statusText}</div>
         <div class="cards" id="cards-opp-${idx}"></div>
         <div class="chips">Chips: $${p.chips}</div>
         <div class="bet">Bet: $${p.currentBet}</div>
@@ -396,20 +533,26 @@ function renderUI() {
   commEl.innerHTML = '';
   gameState.communityCards.forEach(c => commEl.appendChild(createCardUI(c)));
 
-  // Enable/Disable Hero Turn Buttons
+  // Turn Controls Handling
   const isMyTurn = gameState.players[gameState.activePlayerIndex]?.id === myPeerId && gameState.gameStage !== 'idle';
   
-  if (isMyTurn && hero && !hero.folded) {
-    const toCall = gameState.currentHighBet - hero.currentBet;
-    btnFold.disabled = false;
-    btnCheck.disabled = toCall > 0;
-    btnCall.disabled = toCall === 0;
-    btnCall.textContent = toCall > 0 ? `Call $${toCall}` : 'Call';
+  if (isMyTurn && hero && !hero.folded && !hero.allIn) {
+    const amountToCall = gameState.currentHighBet - hero.currentBet;
 
-    const minRaise = gameState.currentHighBet + 20;
-    raiseInput.min = minRaise;
-    if (parseInt(raiseInput.value, 10) < minRaise) raiseInput.value = minRaise;
-    btnRaise.disabled = hero.chips <= toCall;
+    btnFold.disabled = false;
+    btnCheck.disabled = amountToCall > 0;
+    btnCall.disabled = amountToCall === 0;
+    btnCall.textContent = amountToCall > 0 ? `Call $${Math.min(amountToCall, hero.chips)}` : 'Call';
+
+    const minRaiseTotal = gameState.currentHighBet + gameState.minRaiseAmount;
+    const maxRaiseTotal = hero.currentBet + hero.chips;
+
+    raiseInput.min = minRaiseTotal;
+    if (parseInt(raiseInput.value, 10) < minRaiseTotal) {
+      raiseInput.value = minRaiseTotal;
+    }
+
+    btnRaise.disabled = hero.chips <= amountToCall;
   } else {
     btnFold.disabled = true;
     btnCheck.disabled = true;
@@ -433,18 +576,81 @@ function createCardUI(card, isHidden = false) {
   return cardDiv;
 }
 
-function evaluateHand(cards) {
-  const ranks = cards.map(c => VALUES.indexOf(c.value)).sort((a, b) => b - a);
+// ---------------- OFFICIAL HAND EVALUATION ----------------
+function evaluate7CardHand(cards) {
+  if (cards.length < 5) return 0;
+
+  // Generate all 5-card combinations from 7 cards
+  const combinations = kCombinations(cards, 5);
+  let maxScore = -1;
+
+  combinations.forEach(combo => {
+    const score = evaluate5CardHand(combo);
+    if (score > maxScore) maxScore = score;
+  });
+
+  return maxScore;
+}
+
+function kCombinations(set, k) {
+  if (k > set.length || k <= 0) return [];
+  if (k === set.length) return [set];
+  if (k === 1) return set.map(e => [e]);
+
+  const combos = [];
+  for (let i = 0; i < set.length - k + 1; i++) {
+    const head = set.slice(i, i + 1);
+    const tailCombos = kCombinations(set.slice(i + 1), k - 1);
+    tailCombos.forEach(tail => combos.push(head.concat(tail)));
+  }
+  return combos;
+}
+
+function evaluate5CardHand(hand) {
+  const ranks = hand.map(c => VALUES.indexOf(c.value)).sort((a, b) => b - a);
+  const suits = hand.map(c => c.suit);
+
+  const isFlush = suits.every(s => s === suits[0]);
+  
+  // Straight Check
+  let isStraight = false;
+  let straightHighRank = -1;
+
+  if (new Set(ranks).size === 5) {
+    if (ranks[0] - ranks[4] === 4) {
+      isStraight = true;
+      straightHighRank = ranks[0];
+    } else if (ranks[0] === 12 && ranks[1] === 3 && ranks[2] === 2 && ranks[3] === 1 && ranks[4] === 0) {
+      // Ace-low straight (A-2-3-4-5)
+      isStraight = true;
+      straightHighRank = 3; 
+    }
+  }
+
+  // Count Frequencies
   const counts = {};
   ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
 
-  const values = Object.values(counts);
-  const maxCount = Math.max(...values);
+  const freqEntries = Object.entries(counts).map(([rank, count]) => ({
+    rank: parseInt(rank, 10),
+    count
+  }));
 
-  if (maxCount === 4) return 700 + ranks[0]; 
-  if (values.includes(3) && values.includes(2)) return 600 + ranks[0]; 
-  if (maxCount === 3) return 300 + ranks[0]; 
-  if (values.filter(v => v === 2).length >= 2) return 200 + ranks[0]; 
-  if (maxCount === 2) return 100 + ranks[0]; 
-  return ranks[0];
+  // Sort by Frequency DESC, then Rank DESC
+  freqEntries.sort((a, b) => b.count - a.count || b.rank - a.rank);
+
+  const primaryRank = freqEntries[0].rank;
+  const secondaryRank = freqEntries[1] ? freqEntries[1].rank : 0;
+
+  // Scoring Base System
+  if (isStraight && isFlush) return 800000 + straightHighRank;
+  if (freqEntries[0].count === 4) return 700000 + primaryRank * 100 + secondaryRank;
+  if (freqEntries[0].count === 3 && freqEntries[1]?.count === 2) return 600000 + primaryRank * 100 + secondaryRank;
+  if (isFlush) return 500000 + ranks[0] * 1000 + ranks[1] * 100 + ranks[2] * 10 + ranks[3];
+  if (isStraight) return 400000 + straightHighRank;
+  if (freqEntries[0].count === 3) return 300000 + primaryRank * 100 + ranks[3];
+  if (freqEntries[0].count === 2 && freqEntries[1]?.count === 2) return 200000 + primaryRank * 100 + secondaryRank * 10 + freqEntries[2].rank;
+  if (freqEntries[0].count === 2) return 100000 + primaryRank * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
+
+  return ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
 }
