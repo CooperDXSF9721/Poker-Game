@@ -14,7 +14,6 @@ body {
   color: #fff;
 }
 
-/* Lobby / Menu Modal */
 #lobby-modal {
   position: fixed;
   top: 0; left: 0; width: 100%; height: 100%;
@@ -32,13 +31,13 @@ body {
   border-radius: 12px;
   padding: 24px;
   width: 90%;
-  max-width: 420px;
+  max-width: 440px;
   text-align: center;
   box-shadow: 0 0 25px rgba(0,0,0,0.9);
 }
 
 .lobby-box h2 { color: #ffd700; margin-bottom: 12px; }
-.lobby-box h3 { font-size: 1rem; color: #eee; margin-bottom: 8px; text-align: left; }
+.lobby-box h3 { font-size: 1rem; color: #eee; margin-bottom: 4px; text-align: left; }
 
 #profile-card {
   background: #111;
@@ -70,7 +69,7 @@ body {
   border: none;
 }
 
-.sub-text { font-size: 0.75rem; color: #888; }
+.sub-text { font-size: 0.75rem; color: #888; text-align: left; margin-bottom: 8px; }
 
 .divider { border: 0; height: 1px; background: #333; margin: 15px 0; }
 
@@ -90,6 +89,28 @@ body {
   font-size: 0.95rem;
 }
 
+.public-tables-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-public {
+  background-color: #2e7d32;
+  color: white;
+  padding: 10px;
+  font-size: 0.9rem;
+  font-weight: bold;
+  border-radius: 6px;
+  border: 1px solid #4caf50;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.btn-public:hover {
+  background-color: #388e3c;
+}
+
 .lobby-section {
   display: flex;
   flex-direction: column;
@@ -103,7 +124,6 @@ body {
   min-height: 20px;
 }
 
-/* Table Bar */
 #table-top-bar {
   position: absolute;
   top: 15px;
@@ -126,7 +146,6 @@ body {
 
 .danger-btn { background: #d32f2f; color: #fff; }
 
-/* Poker Table Layout */
 #poker-table {
   width: 95%;
   max-width: 1050px;
