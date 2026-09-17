@@ -1,680 +1,281 @@
-// ==========================================
-// TEXAS HOLD'EM - GAME ENGINE
-// ==========================================
+const SUITS = ['♠', '♥', '♦', '♣'];
+const VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
-// ---------- GAME DATA ----------
+class Deck {
+  constructor() {
+    this.cards = [];
+    this.reset();
+  }
 
-const suits = ["♠", "♥", "♦", "♣"];
+  reset() {
+    this.cards = [];
+    for (let suit of SUITS) {
+      for (let value of VALUES) {
+        this.cards.push({ suit, value });
+      }
+    }
+    this.shuffle();
+  }
 
-const ranks = [
-    { name: "2", value: 2 },
-    { name: "3", value: 3 },
-    { name: "4", value: 4 },
-    { name: "5", value: 5 },
-    { name: "6", value: 6 },
-    { name: "7", value: 7 },
-    { name: "8", value: 8 },
-    { name: "9", value: 9 },
-    { name: "10", value: 10 },
-    { name: "J", value: 11 },
-    { name: "Q", value: 12 },
-    { name: "K", value: 13 },
-    { name: "A", value: 14 }
-];
+  shuffle() {
+    for (let i = this.cards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
+    }
+  }
 
-let deck = [];
+  pop() {
+    return this.cards.pop();
+  }
+}
+
+// Game State
+const deck = new Deck();
 let playerHand = [];
+let opponentHand = [];
 let communityCards = [];
 
-let bots = [
-    {
-        name: "Bot 1",
-        chips: 1000,
-        hand: [],
-        folded: false,
-        currentBet: 0
-    },
-    {
-        name: "Bot 2",
-        chips: 1000,
-        hand: [],
-        folded: false,
-        currentBet: 0
-    },
-    {
-        name: "Bot 3",
-        chips: 1000,
-        hand: [],
-        folded: false,
-        currentBet: 0
-    }
-];
-
 let playerChips = 1000;
-
+let opponentChips = 1000;
 let pot = 0;
+
+let playerBet = 0;
+let opponentBet = 0;
 let currentBet = 0;
-let stage = "waiting";
-let handActive = false;
 
+// Phases: 'preflop', 'flop', 'turn', 'river', 'showdown'
+let gameStage = 'preflop';
 
-// ==========================================
-// DECK FUNCTIONS
-// ==========================================
+// DOM Elements
+const playerCardsEl = document.getElementById('player-cards');
+const opponentCardsEl = document.getElementById('opponent-cards');
+const communityCardsEl = document.getElementById('community-cards');
 
-function createDeck() {
+const playerChipsEl = document.getElementById('player-chips');
+const opponentChipsEl = document.getElementById('opponent-chips');
+const playerBetEl = document.getElementById('player-bet');
+const opponentBetEl = document.getElementById('opponent-bet');
+const potAmountEl = document.getElementById('pot-amount');
+const messageBoardEl = document.getElementById('message-board');
 
-    deck = [];
+const btnDeal = document.getElementById('btn-deal');
+const btnFold = document.getElementById('btn-fold');
+const btnCheck = document.getElementById('btn-check');
+const btnCall = document.getElementById('btn-call');
+const btnRaise = document.getElementById('btn-raise');
 
-    for (const suit of suits) {
+// Event Listeners
+btnDeal.addEventListener('click', startNewHand);
+btnFold.addEventListener('click', () => handlePlayerAction('fold'));
+btnCheck.addEventListener('click', () => handlePlayerAction('check'));
+btnCall.addEventListener('click', () => handlePlayerAction('call'));
+btnRaise.addEventListener('click', () => handlePlayerAction('raise'));
 
-        for (const rank of ranks) {
+function updateUI() {
+  playerChipsEl.textContent = playerChips;
+  opponentChipsEl.textContent = opponentChips;
+  playerBetEl.textContent = playerBet;
+  opponentBetEl.textContent = opponentBet;
+  potAmountEl.textContent = pot;
 
-            deck.push({
-                suit: suit,
-                rank: rank.name,
-                value: rank.value
-            });
-
-        }
-    }
-
-    shuffleDeck();
+  // Toggle action buttons depending on game status
+  const canCall = currentBet > playerBet;
+  btnCheck.disabled = canCall;
+  btnCall.disabled = !canCall;
 }
 
-
-// Fisher-Yates shuffle
-function shuffleDeck() {
-
-    for (let i = deck.length - 1; i > 0; i--) {
-
-        const j = Math.floor(Math.random() * (i + 1));
-
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
+function createCardUI(card, isHidden = false) {
+  const cardDiv = document.createElement('div');
+  if (isHidden) {
+    cardDiv.className = 'card back';
+    return cardDiv;
+  }
+  
+  const isRed = card.suit === '♥' || card.suit === '♦';
+  cardDiv.className = `card ${isRed ? 'red' : 'black'}`;
+  cardDiv.innerHTML = `
+    <div>${card.value}</div>
+    <div class="card-suit">${card.suit}</div>
+  `;
+  return cardDiv;
 }
 
+function renderCards(showOpponent = false) {
+  playerCardsEl.innerHTML = '';
+  playerHand.forEach(card => playerCardsEl.appendChild(createCardUI(card)));
 
-function drawCard() {
+  opponentCardsEl.innerHTML = '';
+  opponentHand.forEach(card => {
+    opponentCardsEl.appendChild(createCardUI(card, !showOpponent));
+  });
 
-    return deck.pop();
+  communityCardsEl.innerHTML = '';
+  communityCards.forEach(card => communityCardsEl.appendChild(createCardUI(card)));
 }
-
-
-// ==========================================
-// START NEW HAND
-// ==========================================
 
 function startNewHand() {
+  if (playerChips <= 0 || opponentChips <= 0) {
+    messageBoardEl.textContent = "Game over! Refresh the page to restart.";
+    return;
+  }
 
-    createDeck();
+  deck.reset();
+  playerHand = [deck.pop(), deck.pop()];
+  opponentHand = [deck.pop(), deck.pop()];
+  communityCards = [];
 
-    playerHand = [];
-    communityCards = [];
+  pot = 0;
+  playerBet = 0;
+  opponentBet = 0;
+  currentBet = 0;
+  gameStage = 'preflop';
 
-    pot = 0;
-    currentBet = 0;
+  // Blinds ($10 / $20)
+  postBet('player', 10);
+  postBet('opponent', 20);
+  currentBet = 20;
 
-    stage = "preflop";
+  renderCards(false);
+  updateUI();
 
-    handActive = true;
-
-    playerHand.push(drawCard());
-    playerHand.push(drawCard());
-
-    for (const bot of bots) {
-
-        bot.hand = [
-            drawCard(),
-            drawCard()
-        ];
-
-        bot.folded = false;
-        bot.currentBet = 0;
-
-    }
-
-    updateDisplay();
-
-    enablePlayerActions();
-
-    document.getElementById("stage").textContent =
-        "Pre-Flop";
-
-    document.getElementById("hand-status").textContent =
-        "Your turn";
-
-    document.getElementById("current-bet").textContent =
-        currentBet;
-
-    setBotActions("");
-
-    console.log("Your hand:", playerHand);
-
+  btnDeal.disabled = true;
+  toggleActionButtons(true);
+  messageBoardEl.textContent = "Blinds posted ($10/$20). Your move!";
 }
 
-
-// ==========================================
-// COMMUNITY CARDS
-// ==========================================
-
-function dealFlop() {
-
-    drawCard();
-
-    communityCards.push(drawCard());
-    communityCards.push(drawCard());
-    communityCards.push(drawCard());
-
-    stage = "flop";
-
-    updateDisplay();
-
-    document.getElementById("stage").textContent =
-        "Flop";
-
+function postBet(player, amount) {
+  const actualAmount = Math.min(amount, player === 'player' ? playerChips : opponentChips);
+  if (player === 'player') {
+    playerChips -= actualAmount;
+    playerBet += actualAmount;
+  } else {
+    opponentChips -= actualAmount;
+    opponentBet += actualAmount;
+  }
+  pot += actualAmount;
 }
 
-
-function dealTurn() {
-
-    drawCard();
-
-    communityCards.push(drawCard());
-
-    stage = "turn";
-
-    updateDisplay();
-
-    document.getElementById("stage").textContent =
-        "Turn";
-
+function toggleActionButtons(enable) {
+  btnFold.disabled = !enable;
+  btnRaise.disabled = !enable;
+  btnCheck.disabled = !enable;
+  btnCall.disabled = !enable;
 }
 
+function handlePlayerAction(action) {
+  if (action === 'fold') {
+    messageBoardEl.textContent = "You folded. Opponent wins the pot.";
+    opponentChips += pot;
+    endHand();
+    return;
+  }
 
-function dealRiver() {
+  if (action === 'check') {
+    messageBoardEl.textContent = "You checked.";
+  } else if (action === 'call') {
+    const callAmount = currentBet - playerBet;
+    postBet('player', callAmount);
+    messageBoardEl.textContent = "You called.";
+  } else if (action === 'raise') {
+    const raiseAmount = (currentBet - playerBet) + 20;
+    postBet('player', raiseAmount);
+    currentBet = playerBet;
+    messageBoardEl.textContent = "You raised $20.";
+  }
 
-    drawCard();
+  updateUI();
+  toggleActionButtons(false);
 
-    communityCards.push(drawCard());
-
-    stage = "river";
-
-    updateDisplay();
-
-    document.getElementById("stage").textContent =
-        "River";
-
+  // Simple Opponent AI Turn
+  setTimeout(opponentTurn, 1000);
 }
 
+function opponentTurn() {
+  // Simple AI Logic: Call if needed, otherwise check/match
+  if (opponentBet < currentBet) {
+    const callAmount = currentBet - opponentBet;
+    postBet('opponent', callAmount);
+    messageBoardEl.textContent = "Opponent called.";
+  } else {
+    messageBoardEl.textContent = "Opponent checked.";
+  }
 
-// ==========================================
-// DISPLAY CARDS
-// ==========================================
-
-function createCardElement(card) {
-
-    const element = document.createElement("div");
-
-    element.classList.add("card");
-
-    element.textContent =
-        card.rank + card.suit;
-
-    if (card.suit === "♥" || card.suit === "♦") {
-
-        element.style.color = "#c62828";
-
-    }
-
-    return element;
+  updateUI();
+  setTimeout(advanceStage, 1000);
 }
 
+function advanceStage() {
+  // Reset bets for next street
+  playerBet = 0;
+  opponentBet = 0;
+  currentBet = 0;
 
-function updatePlayerCards() {
+  if (gameStage === 'preflop') {
+    gameStage = 'flop';
+    communityCards.push(deck.pop(), deck.pop(), deck.pop());
+    messageBoardEl.textContent = "Flop dealt. Action is on you.";
+  } else if (gameStage === 'flop') {
+    gameStage = 'turn';
+    communityCards.push(deck.pop());
+    messageBoardEl.textContent = "Turn dealt. Action is on you.";
+  } else if (gameStage === 'turn') {
+    gameStage = 'river';
+    communityCards.push(deck.pop());
+    messageBoardEl.textContent = "River dealt. Final betting round.";
+  } else if (gameStage === 'river') {
+    gameStage = 'showdown';
+    showdown();
+    return;
+  }
 
-    const container =
-        document.getElementById("player-cards");
-
-    container.innerHTML = "";
-
-    for (const card of playerHand) {
-
-        container.appendChild(
-            createCardElement(card)
-        );
-
-    }
+  renderCards(false);
+  updateUI();
+  toggleActionButtons(true);
 }
 
+function showdown() {
+  renderCards(true); // Reveal opponent cards
 
-function updateCommunityCards() {
+  // Evaluate Hand Strength (Simplified scoring logic)
+  const playerScore = getHandValue(playerHand.concat(communityCards));
+  const opponentScore = getHandValue(opponentHand.concat(communityCards));
 
-    const container =
-        document.getElementById("community-cards");
+  if (playerScore > opponentScore) {
+    messageBoardEl.textContent = "You win the hand with a stronger combination!";
+    playerChips += pot;
+  } else if (opponentScore > playerScore) {
+    messageBoardEl.textContent = "Opponent wins the hand.";
+    opponentChips += pot;
+  } else {
+    messageBoardEl.textContent = "It's a tie! Pot is split.";
+    playerChips += Math.floor(pot / 2);
+    opponentChips += Math.floor(pot / 2);
+  }
 
-    container.innerHTML = "";
-
-    for (let i = 0; i < 5; i++) {
-
-        if (communityCards[i]) {
-
-            container.appendChild(
-                createCardElement(
-                    communityCards[i]
-                )
-            );
-
-        } else {
-
-            const emptyCard =
-                document.createElement("div");
-
-            emptyCard.classList.add(
-                "card",
-                "empty"
-            );
-
-            container.appendChild(emptyCard);
-
-        }
-    }
+  endHand();
 }
 
-
-// ==========================================
-// DISPLAY PLAYER INFORMATION
-// ==========================================
-
-function updateDisplay() {
-
-    updatePlayerCards();
-    updateCommunityCards();
-
-    document.getElementById(
-        "player-chips"
-    ).textContent =
-        playerChips;
-
-    document.getElementById(
-        "pot"
-    ).textContent =
-        "$" + pot;
-
-    document.getElementById(
-        "current-bet"
-    ).textContent =
-        currentBet;
-
+function endHand() {
+  pot = 0;
+  updateUI();
+  toggleActionButtons(false);
+  btnDeal.disabled = false;
 }
 
+// Basic Hand Evaluator - Higher number = better hand
+function getHandValue(cards) {
+  const ranks = cards.map(c => VALUES.indexOf(c.value)).sort((a, b) => b - a);
+  const counts = {};
+  ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
 
-// ==========================================
-// BUTTON CONTROLS
-// ==========================================
+  const values = Object.values(counts);
+  const maxCount = Math.max(...values);
 
-function enablePlayerActions() {
-
-    document.getElementById(
-        "fold"
-    ).disabled = false;
-
-    document.getElementById(
-        "check"
-    ).disabled =
-        currentBet !== 0;
-
-    document.getElementById(
-        "call"
-    ).disabled =
-        currentBet === 0;
-
-    document.getElementById(
-        "raise"
-    ).disabled = false;
-
+  // Score multiplier based on basic card matches
+  if (maxCount === 4) return 700 + ranks[0]; // Four of a kind
+  if (values.includes(3) && values.includes(2)) return 600 + ranks[0]; // Full House
+  if (maxCount === 3) return 300 + ranks[0]; // Three of a kind
+  if (values.filter(v => v === 2).length >= 2) return 200 + ranks[0]; // Two Pair
+  if (maxCount === 2) return 100 + ranks[0]; // Pair
+  return ranks[0]; // High Card
 }
-
-
-function disablePlayerActions() {
-
-    document.getElementById(
-        "fold"
-    ).disabled = true;
-
-    document.getElementById(
-        "check"
-    ).disabled = true;
-
-    document.getElementById(
-        "call"
-    ).disabled = true;
-
-    document.getElementById(
-        "raise"
-    ).disabled = true;
-
-}
-
-
-// ==========================================
-// PLAYER ACTIONS
-// ==========================================
-
-function playerFold() {
-
-    if (!handActive) return;
-
-    handActive = false;
-
-    disablePlayerActions();
-
-    document.getElementById(
-        "player-action"
-    ).textContent =
-        "Folded";
-
-    document.getElementById(
-        "hand-status"
-    ).textContent =
-        "You folded";
-
-}
-
-
-function playerCheck() {
-
-    if (!handActive) return;
-
-    document.getElementById(
-        "player-action"
-    ).textContent =
-        "Check";
-
-    botTurn();
-
-}
-
-
-function playerCall() {
-
-    if (!handActive) return;
-
-    const amount =
-        Math.min(
-            currentBet,
-            playerChips
-        );
-
-    playerChips -= amount;
-
-    pot += amount;
-
-    document.getElementById(
-        "player-action"
-    ).textContent =
-        "Call $" + amount;
-
-    updateDisplay();
-
-    botTurn();
-
-}
-
-
-function playerRaise() {
-
-    if (!handActive) return;
-
-    const raiseAmount = 50;
-
-    const totalBet =
-        currentBet + raiseAmount;
-
-    if (totalBet > playerChips) {
-
-        return;
-
-    }
-
-    const amountToPay =
-        totalBet - currentBet;
-
-    playerChips -= amountToPay;
-
-    pot += amountToPay;
-
-    currentBet = totalBet;
-
-    document.getElementById(
-        "player-action"
-    ).textContent =
-        "Raise to $" + currentBet;
-
-    updateDisplay();
-
-    botTurn();
-
-}
-
-
-// ==========================================
-// BOT TURN
-// ==========================================
-
-function botTurn() {
-
-    disablePlayerActions();
-
-    setTimeout(() => {
-
-        for (const bot of bots) {
-
-            if (bot.folded) continue;
-
-            const randomDecision =
-                Math.random();
-
-            if (randomDecision < 0.15) {
-
-                bot.folded = true;
-
-                setBotAction(
-                    bot,
-                    "Fold"
-                );
-
-            }
-
-            else if (randomDecision < 0.75) {
-
-                setBotAction(
-                    bot,
-                    "Call"
-                );
-
-            }
-
-            else {
-
-                setBotAction(
-                    bot,
-                    "Raise"
-                );
-
-                currentBet += 50;
-
-            }
-
-        }
-
-        updateDisplay();
-
-        advanceRound();
-
-    }, 800);
-
-}
-
-
-// ==========================================
-// ADVANCE THE HAND
-// ==========================================
-
-function advanceRound() {
-
-    setTimeout(() => {
-
-        if (stage === "preflop") {
-
-            dealFlop();
-
-        }
-
-        else if (stage === "flop") {
-
-            dealTurn();
-
-        }
-
-        else if (stage === "turn") {
-
-            dealRiver();
-
-        }
-
-        else if (stage === "river") {
-
-            finishHand();
-
-            return;
-
-        }
-
-        enablePlayerActions();
-
-        document.getElementById(
-            "hand-status"
-        ).textContent =
-            "Your turn";
-
-    }, 700);
-
-}
-
-
-// ==========================================
-// END HAND
-// ==========================================
-
-function finishHand() {
-
-    handActive = false;
-
-    disablePlayerActions();
-
-    document.getElementById(
-        "stage"
-    ).textContent =
-        "Showdown";
-
-    document.getElementById(
-        "hand-status"
-    ).textContent =
-        "Hand complete";
-
-    setBotActions(
-        "Showdown"
-    );
-
-}
-
-
-// ==========================================
-// BOT UI
-// ==========================================
-
-function setBotAction(
-    bot,
-    message
-) {
-
-    let id = "";
-
-    if (bot.name === "Bot 1") {
-        id = "bot1-action";
-    }
-
-    if (bot.name === "Bot 2") {
-        id = "bot2-action";
-    }
-
-    if (bot.name === "Bot 3") {
-        id = "bot3-action";
-    }
-
-    document.getElementById(id)
-        .textContent = message;
-
-}
-
-
-function setBotActions(message) {
-
-    document.getElementById(
-        "bot1-action"
-    ).textContent = message;
-
-    document.getElementById(
-        "bot2-action"
-    ).textContent = message;
-
-    document.getElementById(
-        "bot3-action"
-    ).textContent = message;
-
-}
-
-
-// ==========================================
-// BUTTON EVENT LISTENERS
-// ==========================================
-
-document.getElementById(
-    "new-game"
-).addEventListener(
-    "click",
-    startNewHand
-);
-
-
-document.getElementById(
-    "fold"
-).addEventListener(
-    "click",
-    playerFold
-);
-
-
-document.getElementById(
-    "check"
-).addEventListener(
-    "click",
-    playerCheck
-);
-
-
-document.getElementById(
-    "call"
-).addEventListener(
-    "click",
-    playerCall
-);
-
-
-document.getElementById(
-    "raise"
-).addEventListener(
-    "click",
-    playerRaise
-);
