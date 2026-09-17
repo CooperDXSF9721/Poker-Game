@@ -8,29 +8,45 @@
 </head>
 <body>
   <div id="poker-table">
-    <!-- Dealer / Opponent Area -->
-    <div class="player-area" id="opponent-area">
-      <div class="status-badge" id="opponent-status">Opponent</div>
-      <div class="cards" id="opponent-cards"></div>
-      <div class="chips">Chips: $<span id="opponent-chips">1000</span></div>
-      <div class="bet">Bet: $<span id="opponent-bet">0</span></div>
+    <!-- Top Row Opponents -->
+    <div id="top-opponents">
+      <div class="player-area" id="player-1">
+        <div class="status-badge" id="name-1">Bot 1 (SB)</div>
+        <div class="cards" id="cards-1"></div>
+        <div class="chips">Chips: $<span id="chips-1">1000</span></div>
+        <div class="bet">Bet: $<span id="bet-1">0</span></div>
+      </div>
+
+      <div class="player-area" id="player-2">
+        <div class="status-badge" id="name-2">Bot 2 (BB)</div>
+        <div class="cards" id="cards-2"></div>
+        <div class="chips">Chips: $<span id="chips-2">1000</span></div>
+        <div class="bet">Bet: $<span id="bet-2">0</span></div>
+      </div>
+
+      <div class="player-area" id="player-3">
+        <div class="status-badge" id="name-3">Bot 3</div>
+        <div class="cards" id="cards-3"></div>
+        <div class="chips">Chips: $<span id="chips-3">1000</span></div>
+        <div class="bet">Bet: $<span id="bet-3">0</span></div>
+      </div>
     </div>
 
-    <!-- Community Cards & Pot Area -->
+    <!-- Center Board -->
     <div id="table-center">
       <div id="pot-container">
         <div id="pot-label">POT: $<span id="pot-amount">0</span></div>
       </div>
       <div id="community-cards"></div>
-      <div id="message-board">Welcome to Texas Hold'em! Press "New Hand" to start.</div>
+      <div id="message-board">Press "New Hand" to deal!</div>
     </div>
 
-    <!-- User Player Area -->
-    <div class="player-area" id="player-area">
-      <div class="status-badge" id="player-status">You</div>
-      <div class="cards" id="player-cards"></div>
-      <div class="chips">Chips: $<span id="player-chips">1000</span></div>
-      <div class="bet">Bet: $<span id="player-bet">0</span></div>
+    <!-- Hero Player Area -->
+    <div class="player-area" id="player-0">
+      <div class="status-badge" id="name-0">You (Hero)</div>
+      <div class="cards" id="cards-0"></div>
+      <div class="chips">Chips: $<span id="chips-0">1000</span></div>
+      <div class="bet">Bet: $<span id="bet-0">0</span></div>
     </div>
 
     <!-- Controls -->
@@ -39,7 +55,11 @@
       <button id="btn-fold" class="btn" disabled>Fold</button>
       <button id="btn-check" class="btn" disabled>Check</button>
       <button id="btn-call" class="btn" disabled>Call</button>
-      <button id="btn-raise" class="btn" disabled>Raise $20</button>
+      
+      <div id="raise-group">
+        <input type="number" id="raise-amount" min="20" step="10" value="40" />
+        <button id="btn-raise" class="btn" disabled>Bet / Raise</button>
+      </div>
     </div>
   </div>
 
