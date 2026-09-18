@@ -1,5 +1,5 @@
 // ==========================================
-// SINGLE-SOURCE POKER ENGINE (PHANTOM PLAYER FIX)
+// SINGLE-SOURCE POKER ENGINE (FREE PLAY / INFINITE CHIPS)
 // ==========================================
 
 const SUITS = ['♠', '♥', '♦', '♣'];
@@ -24,66 +24,7 @@ class Deck {
   draw() { return this.cards.pop(); }
 }
 
-// ---------------- BANKROLL SYSTEM ----------------
-const MAX_BANKROLL = 20000;
-let playerBankroll = parseInt(localStorage.getItem('poker_bankroll'), 10) || 1000;
-playerBankroll = Math.min(playerBankroll, MAX_BANKROLL);
-localStorage.setItem('poker_bankroll', playerBankroll);
-
-let lastBonusTime = parseInt(localStorage.getItem('poker_last_bonus'), 10) || 0;
-
-function updateBankrollUI() {
-  playerBankroll = Math.min(playerBankroll, MAX_BANKROLL);
-  const el = document.getElementById('menu-chip-count');
-  if (el) el.textContent = `$${playerBankroll.toLocaleString()}`;
-  checkDailyBonus();
-}
-
-function checkDailyBonus() {
-  const now = Date.now();
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  const btnClaim = document.getElementById('btn-claim-bonus');
-  const timerText = document.getElementById('bonus-timer');
-
-  if (!btnClaim || !timerText) return;
-
-  if (playerBankroll >= MAX_BANKROLL) {
-    btnClaim.style.display = 'none';
-    timerText.textContent = "Bankroll capped at $20,000!";
-    return;
-  }
-
-  if (playerBankroll === 0 || now - lastBonusTime >= ONE_DAY_MS) {
-    btnClaim.style.display = 'block';
-    timerText.textContent = playerBankroll === 0 ? "Broke Bonus active!" : "Daily Bonus available!";
-  } else {
-    btnClaim.style.display = 'none';
-    const remainingMs = ONE_DAY_MS - (now - lastBonusTime);
-    const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-    const mins = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-    timerText.textContent = `Next Daily Bonus in ${hours}h ${mins}m`;
-  }
-}
-
-const btnClaimBonus = document.getElementById('btn-claim-bonus');
-if (btnClaimBonus) {
-  btnClaimBonus.addEventListener('click', () => {
-    playerBankroll = Math.min(playerBankroll + 1000, MAX_BANKROLL);
-    lastBonusTime = Date.now();
-    localStorage.setItem('poker_bankroll', playerBankroll);
-    localStorage.setItem('poker_last_bonus', lastBonusTime);
-    updateBankrollUI();
-  });
-}
-
-function deductBuyIn(amount) {
-  playerBankroll -= amount;
-  initialBuyInPaid = amount;
-  localStorage.setItem('poker_bankroll', playerBankroll);
-  updateBankrollUI();
-}
-
-// ---------------- GAME STATE & NETWORKING ----------------
+// ---------------- NETWORKING & GAME STATE ----------------
 let peer = null;
 let connections = [];
 let hostConn = null;
@@ -93,7 +34,6 @@ let myName = "Player";
 let activeDeck = null;
 let currentSessionMode = 'ranked';
 let currentSessionBuyIn = 1000;
-let initialBuyInPaid = 0;
 
 let gameState = {
   mode: 'ranked',
@@ -154,7 +94,7 @@ document.querySelectorAll('.btn-public').forEach(btn => {
     const max = parseInt(inputEl.max, 10);
 
     if (isNaN(buyIn) || buyIn < min || buyIn > max) {
-      lobbyStatus.textContent = `Buy-in must be between $${min.toLocaleString()} and $${max.toLocaleString()}!`;
+      lobbyStatus.textContent = `Starting chips must be between $${min.toLocaleString()} and $${max.toLocaleString()}!`;
       return;
     }
     joinPublicTable(buyIn);
@@ -166,13 +106,8 @@ function joinPublicTable(buyIn) {
   currentSessionMode = 'ranked';
   currentSessionBuyIn = buyIn;
 
-  if (playerBankroll < buyIn) {
-    lobbyStatus.textContent = `Insufficient Bankroll! Need $${buyIn.toLocaleString()}.`;
-    return;
-  }
-
   const publicRoomCode = `PUBLIC_POKER_${buyIn}`;
-  lobbyStatus.textContent = `Connecting to $${buyIn.toLocaleString()} Public Table...`;
+  lobbyStatus.textContent = `Connecting to $${buyIn.toLocaleString()} Table...`;
 
   peer = new Peer();
   peer.on('open', (id) => {
@@ -182,7 +117,6 @@ function joinPublicTable(buyIn) {
 
     hostConn.on('open', () => {
       connected = true;
-      deductBuyIn(buyIn);
       displayRoomCode.textContent = publicRoomCode;
       if (lobbyModal) lobbyModal.style.display = 'none';
       hostConn.send({ type: 'JOIN', name: myName, id: myPeerId });
@@ -207,8 +141,7 @@ function joinPublicTable(buyIn) {
 }
 
 function hostPublicTable(roomCode, buyIn) {
-  lobbyStatus.textContent = `Creating Public Table for $${buyIn.toLocaleString()}...`;
-  deductBuyIn(buyIn);
+  lobbyStatus.textContent = `Creating Table for $${buyIn.toLocaleString()}...`;
 
   isHost = true;
   peer = new Peer(roomCode);
@@ -250,7 +183,6 @@ function initGameState(buyIn, mode) {
 }
 
 function addPlayerToState(id, name, chips) {
-  // CRITICAL FIX: Prevent Duplicate Player Entries
   const exists = gameState.players.some(p => p.id === id);
   if (!exists) {
     gameState.players.push({
@@ -273,16 +205,8 @@ if (btnCreateRoom) {
     currentSessionBuyIn = parseInt(hostBuyinInput.value, 10);
 
     if (isNaN(currentSessionBuyIn) || currentSessionBuyIn < 100) {
-      lobbyStatus.textContent = "Buy-in must be at least $100!";
+      lobbyStatus.textContent = "Starting stack must be at least $100!";
       return;
-    }
-
-    if (currentSessionMode === 'ranked') {
-      if (playerBankroll < currentSessionBuyIn) {
-        lobbyStatus.textContent = `Need $${currentSessionBuyIn.toLocaleString()} bankroll!`;
-        return;
-      }
-      deductBuyIn(currentSessionBuyIn);
     }
 
     isHost = true;
@@ -332,14 +256,6 @@ if (btnJoinRoom) {
 
       hostConn.on('data', (data) => {
         if (data.type === 'JOIN_INFO') {
-          if (data.mode === 'ranked') {
-            if (playerBankroll < data.buyIn) {
-              lobbyStatus.textContent = `Need $${data.buyIn.toLocaleString()} bankroll!`;
-              peer.destroy();
-              return;
-            }
-            deductBuyIn(data.buyIn);
-          }
           displayRoomCode.textContent = code;
           if (lobbyModal) lobbyModal.style.display = 'none';
           hostConn.send({ type: 'JOIN', name: myName, id: myPeerId });
@@ -353,14 +269,6 @@ if (btnJoinRoom) {
 }
 
 if (btnLeaveRoom) btnLeaveRoom.addEventListener('click', () => {
-  if (currentSessionMode === 'ranked' && initialBuyInPaid > 0) {
-    const hero = gameState.players.find(p => p.id === myPeerId);
-    if (hero) {
-      playerBankroll = Math.min(playerBankroll + hero.chips, MAX_BANKROLL);
-      localStorage.setItem('poker_bankroll', playerBankroll);
-      updateBankrollUI();
-    }
-  }
   if (peer) peer.destroy();
   location.reload();
 });
@@ -448,7 +356,6 @@ function startHand() {
     }
   });
 
-  // Advance Dealer
   do {
     gameState.dealerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
   } while (gameState.players[gameState.dealerIndex].chips <= 0);
@@ -457,22 +364,18 @@ function startHand() {
   let sbIdx, bbIdx, utgIdx;
 
   if (activeCount === 2) {
-    // Heads Up: Dealer is SB and acts FIRST preflop
     sbIdx = gameState.dealerIndex;
     bbIdx = getNextPlayerIndex(sbIdx);
     utgIdx = sbIdx;
   } else {
-    // 3+ Players: SB after Dealer, BB after SB, UTG after BB
     sbIdx = getNextPlayerIndex(gameState.dealerIndex);
     bbIdx = getNextPlayerIndex(sbIdx);
     utgIdx = getNextPlayerIndex(bbIdx);
   }
 
-  // Post Blinds
   commitBet(gameState.players[sbIdx], gameState.smallBlind);
   commitBet(gameState.players[bbIdx], gameState.bigBlind);
 
-  // Clear acted flag after blind placement
   gameState.players.forEach(p => p.actedThisRound = false);
 
   gameState.activePlayerIndex = utgIdx;
@@ -507,7 +410,7 @@ function processPlayerAction(playerId, action, targetBet = 0) {
   if (action === 'fold') {
     player.folded = true;
   } else if (action === 'check') {
-    if (toCall > 0) return; // Block illegal check
+    if (toCall > 0) return;
   } else if (action === 'call') {
     commitBet(player, toCall);
   } else if (action === 'raise') {
@@ -725,7 +628,6 @@ function render() {
     gameState.communityCards.forEach(c => commEl.appendChild(renderCard(c)));
   }
 
-  // UI Action Controls
   const isMyTurn = gameState.players[gameState.activePlayerIndex]?.id === myPeerId && gameState.gameStage !== 'idle';
 
   if (isMyTurn && hero && !hero.folded && !hero.allIn) {
@@ -836,6 +738,3 @@ function evaluate5Cards(hand) {
 
   return ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
 }
-
-// Init
-updateBankrollUI();
