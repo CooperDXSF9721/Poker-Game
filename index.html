@@ -4,37 +4,49 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Casino Suite - Poker & Blackjack</title>
+  <!-- PeerJS Library for Multiplayer Poker -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #0f380f;
-      color: #fff;
+    * {
+      box-sizing: border-box;
       margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0b2b0b;
+      color: #fff;
       padding: 20px;
     }
+    /* Navigation Bar */
     .game-nav {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 20px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 10px;
+      border-radius: 8px;
     }
     .game-nav button {
-      padding: 10px 20px;
+      padding: 12px 24px;
       font-size: 16px;
+      font-weight: bold;
       cursor: pointer;
-      background: #205b20;
+      background: #1b4d1b;
       color: white;
       border: 1px solid #4caf50;
-      border-radius: 4px;
+      border-radius: 6px;
+      transition: background 0.2s ease;
     }
     .game-nav button:hover {
       background: #2e8b57;
     }
-    .bj-dashboard, .table-area, .controls-area {
-      background: rgba(0, 0, 0, 0.3);
-      padding: 15px;
-      border-radius: 8px;
-      margin-bottom: 15px;
+    .game-nav button.active {
+      background: #4caf50;
+      color: #000;
     }
+
+    /* Common Card Styles */
     .cards {
       display: flex;
       gap: 10px;
@@ -42,73 +54,175 @@
       margin-top: 10px;
     }
     .card {
-      width: 50px;
-      height: 75px;
+      width: 55px;
+      height: 80px;
       background: white;
       color: black;
-      border-radius: 5px;
-      padding: 5px;
+      border-radius: 6px;
+      padding: 6px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       font-weight: bold;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
-    .card.red { color: red; }
+    .card.red { color: #d00000; }
+    .card.black { color: #000; }
     .card.back {
-      background: #990000;
+      background: linear-gradient(135deg, #b00000, #600000);
       border: 2px solid #fff;
     }
+
+    /* Dashboard & Panel Boxes */
+    .panel {
+      background: rgba(0, 0, 0, 0.35);
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Controls & Inputs */
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+      border: none;
+      background: #ffb703;
+      color: #000;
+      transition: opacity 0.2s ease;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    input[type="text"], input[type="number"] {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      outline: none;
+    }
+
+    /* Blackjack Specific UI */
     .bj-hand {
-      border: 1px dashed #666;
-      padding: 10px;
+      border: 1px dashed #4caf50;
+      padding: 12px;
       margin-top: 10px;
-      border-radius: 5px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.2);
     }
     .bj-hand.active-hand {
       border-color: #ffb703;
-      background: rgba(255, 183, 3, 0.1);
+      background: rgba(255, 183, 3, 0.15);
     }
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+
+    /* Poker Specific UI */
+    .poker-lobby {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .poker-table {
+      background: #145214;
+      border: 12px solid #5c3a21;
+      border-radius: 120px;
+      padding: 30px;
+      text-align: center;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .poker-players {
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    .poker-player-box {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px;
+      border-radius: 8px;
+      min-width: 120px;
+      border: 1px solid #4caf50;
     }
   </style>
 </head>
 <body>
 
-  <!-- Game Selector -->
+  <!-- Navigation Switcher -->
   <div class="game-nav">
-    <button id="nav-poker" onclick="switchGame('poker')">Texas Hold'em (Multiplayer)</button>
+    <button id="nav-poker" class="active" onclick="switchGame('poker')">Texas Hold'em (Multiplayer)</button>
     <button id="nav-blackjack" onclick="switchGame('blackjack')">Single Player Blackjack</button>
   </div>
 
-  <!-- Poker View Container -->
+  <!-- ==================== POKER SECTION ==================== -->
   <div id="poker-section">
-    <h2>Texas Hold'em Poker</h2>
-    <p>Paste your existing PeerJS Poker UI HTML elements inside this container.</p>
+    <div class="panel">
+      <h2>Texas Hold'em Poker (PeerJS Multiplayer)</h2>
+      <p style="margin-top: 5px; color: #ccc;">Host a room or join a friend's Peer ID to play multiplayer Texas Hold'em.</p>
+    </div>
+
+    <!-- PeerJS Connection Lobby -->
+    <div class="panel poker-lobby">
+      <div>
+        <label>Your Peer ID: </label>
+        <strong id="poker-my-id">Connecting...</strong>
+      </div>
+      <div style="margin-left: auto; display: flex; gap: 8px;">
+        <input type="text" id="poker-peer-input" placeholder="Enter Host Peer ID">
+        <button id="poker-btn-connect">Connect to Host</button>
+        <button id="poker-btn-host">Start Game (Host)</button>
+      </div>
+    </div>
+
+    <!-- Poker Table View -->
+    <div class="poker-table">
+      <h3>Community Cards</h3>
+      <div id="poker-community-cards" class="cards" style="justify-content: center;"></div>
+      <div style="margin-top: 15px;">Pot: <strong id="poker-pot-val">$0</strong></div>
+
+      <!-- Player Seats -->
+      <div id="poker-players-container" class="poker-players">
+        <!-- Dynamic player hands render here -->
+      </div>
+    </div>
+
+    <!-- Poker Action Controls -->
+    <div class="panel">
+      <div id="poker-status-msg" style="margin-bottom: 10px; font-weight: bold;">Waiting for players to join...</div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button id="poker-btn-fold" disabled>Fold</button>
+        <button id="poker-btn-check" disabled>Check / Call</button>
+        <button id="poker-btn-raise" disabled>Raise</button>
+        <input type="number" id="poker-raise-input" value="50" min="10" step="10" style="width: 80px;">
+      </div>
+    </div>
   </div>
 
-  <!-- Blackjack View Container -->
+  <!-- ==================== BLACKJACK SECTION ==================== -->
   <div id="blackjack-section" style="display: none;">
-    <div class="bj-dashboard">
-      <div>Chips Balance: <span id="bj-chips">$10,000</span></div>
+    <div class="panel">
+      <div>Chips Balance: <span id="bj-chips" style="color: #ffb703; font-weight: bold;">$10,000</span></div>
       <div id="bj-message" style="margin-top: 5px; font-weight: bold;">Place your bet and press Deal!</div>
     </div>
 
-    <div class="table-area">
+    <div class="panel">
       <h3>Dealer's Hand</h3>
-      <div id="bj-dealer-score">Dealer Shows: 0</div>
+      <div id="bj-dealer-score" style="margin: 5px 0;">Dealer Shows: 0</div>
       <div id="bj-dealer-cards" class="cards"></div>
 
-      <hr style="border-color: #205b20; margin: 15px 0;">
+      <hr style="border-color: rgba(255,255,255,0.1); margin: 15px 0;">
 
       <h3>Your Hands</h3>
       <div id="bj-player-hands"></div>
     </div>
 
-    <div class="controls-area">
+    <div class="panel" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
       <label for="bj-bet-input">Bet Amount: </label>
-      <input type="number" id="bj-bet-input" value="100" min="10" step="10" style="width: 80px; padding: 5px;">
+      <input type="number" id="bj-bet-input" value="100" min="10" step="10" style="width: 90px;">
       <button id="bj-btn-deal">Deal</button>
       <button id="bj-btn-hit" disabled>Hit</button>
       <button id="bj-btn-stand" disabled>Stand</button>
@@ -118,15 +232,30 @@
     </div>
   </div>
 
+  <!-- View Switcher Logic -->
   <script>
     function switchGame(mode) {
       const pokerEl = document.getElementById('poker-section');
       const bjEl = document.getElementById('blackjack-section');
+      const navPoker = document.getElementById('nav-poker');
+      const navBj = document.getElementById('nav-blackjack');
 
-      if (pokerEl) pokerEl.style.display = (mode === 'poker') ? 'block' : 'none';
-      if (bjEl) bjEl.style.display = (mode === 'blackjack') ? 'block' : 'none';
+      if (mode === 'poker') {
+        pokerEl.style.display = 'block';
+        bjEl.style.display = 'none';
+        navPoker.classList.add('active');
+        navBj.classList.remove('active');
+      } else {
+        pokerEl.style.display = 'none';
+        bjEl.style.display = 'block';
+        navBj.classList.add('active');
+        navPoker.classList.remove('active');
+      }
     }
   </script>
+
+  <!-- Game Scripts -->
   <script src="blackjack.js"></script>
+  <script src="poker.js"></script>
 </body>
 </html>
