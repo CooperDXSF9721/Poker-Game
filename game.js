@@ -1,5 +1,5 @@
 // ==========================================
-// POKER ENGINE (REBUILT FROM SCRATCH)
+// SINGLE-SOURCE POKER ENGINE (PHANTOM PLAYER FIX)
 // ==========================================
 
 const SUITS = ['♠', '♥', '♦', '♣'];
@@ -24,7 +24,7 @@ class Deck {
   draw() { return this.cards.pop(); }
 }
 
-// ---------------- BANKROLL MANAGEMENT ----------------
+// ---------------- BANKROLL SYSTEM ----------------
 const MAX_BANKROLL = 20000;
 let playerBankroll = parseInt(localStorage.getItem('poker_bankroll'), 10) || 1000;
 playerBankroll = Math.min(playerBankroll, MAX_BANKROLL);
@@ -83,7 +83,7 @@ function deductBuyIn(amount) {
   updateBankrollUI();
 }
 
-// ---------------- STATE ENGINE ----------------
+// ---------------- GAME STATE & NETWORKING ----------------
 let peer = null;
 let connections = [];
 let hostConn = null;
@@ -112,7 +112,7 @@ let gameState = {
   message: 'Waiting for players...'
 };
 
-// DOM Elements
+// DOM Cache
 const lobbyModal = document.getElementById('lobby-modal');
 const btnCreateRoom = document.getElementById('btn-create-room');
 const btnJoinRoom = document.getElementById('btn-join-room');
@@ -144,7 +144,7 @@ if (hostGameModeSelect) {
   });
 }
 
-// ---------------- MATCHMAKING & LOBBY ----------------
+// ---------------- PUBLIC MATCHMAKING ----------------
 document.querySelectorAll('.btn-public').forEach(btn => {
   btn.addEventListener('click', () => {
     const tier = btn.dataset.tier;
@@ -250,16 +250,20 @@ function initGameState(buyIn, mode) {
 }
 
 function addPlayerToState(id, name, chips) {
-  gameState.players.push({
-    id,
-    name,
-    chips,
-    currentBet: 0,
-    hand: [],
-    folded: false,
-    allIn: false,
-    actedThisRound: false
-  });
+  // CRITICAL FIX: Prevent Duplicate Player Entries
+  const exists = gameState.players.some(p => p.id === id);
+  if (!exists) {
+    gameState.players.push({
+      id,
+      name,
+      chips,
+      currentBet: 0,
+      hand: [],
+      folded: false,
+      allIn: false,
+      actedThisRound: false
+    });
+  }
 }
 
 if (btnCreateRoom) {
@@ -453,12 +457,12 @@ function startHand() {
   let sbIdx, bbIdx, utgIdx;
 
   if (activeCount === 2) {
-    // Heads Up Rules: Dealer is SB and acts FIRST preflop
+    // Heads Up: Dealer is SB and acts FIRST preflop
     sbIdx = gameState.dealerIndex;
     bbIdx = getNextPlayerIndex(sbIdx);
     utgIdx = sbIdx;
   } else {
-    // 3+ Players: SB is after Dealer, BB is after SB, UTG is after BB
+    // 3+ Players: SB after Dealer, BB after SB, UTG after BB
     sbIdx = getNextPlayerIndex(gameState.dealerIndex);
     bbIdx = getNextPlayerIndex(sbIdx);
     utgIdx = getNextPlayerIndex(bbIdx);
@@ -503,7 +507,7 @@ function processPlayerAction(playerId, action, targetBet = 0) {
   if (action === 'fold') {
     player.folded = true;
   } else if (action === 'check') {
-    if (toCall > 0) return; // Disallow illegal check
+    if (toCall > 0) return; // Block illegal check
   } else if (action === 'call') {
     commitBet(player, toCall);
   } else if (action === 'raise') {
@@ -517,7 +521,6 @@ function processPlayerAction(playerId, action, targetBet = 0) {
     gameState.currentHighBet = player.currentBet;
     gameState.lastRaiserIndex = gameState.activePlayerIndex;
 
-    // Reset acted flag for everyone else active
     gameState.players.forEach((p, idx) => {
       if (idx !== gameState.activePlayerIndex && !p.folded && !p.allIn) {
         p.actedThisRound = false;
@@ -582,7 +585,6 @@ function nextStage() {
     return;
   }
 
-  // Post-flop: First player to act is always player AFTER dealer
   gameState.activePlayerIndex = getNextPlayerIndex(gameState.dealerIndex);
   updateTurnMessage();
   syncAndRender();
@@ -639,7 +641,7 @@ function endHand() {
   syncAndRender();
 }
 
-// ---------------- PLAYER ACTION CONTROLS ----------------
+// ---------------- CONTROLS ----------------
 if (btnFold) btnFold.addEventListener('click', () => dispatchAction('fold'));
 if (btnCheck) btnCheck.addEventListener('click', () => dispatchAction('check'));
 if (btnCall) btnCall.addEventListener('click', () => dispatchAction('call'));
@@ -723,7 +725,7 @@ function render() {
     gameState.communityCards.forEach(c => commEl.appendChild(renderCard(c)));
   }
 
-  // Action Button States
+  // UI Action Controls
   const isMyTurn = gameState.players[gameState.activePlayerIndex]?.id === myPeerId && gameState.gameStage !== 'idle';
 
   if (isMyTurn && hero && !hero.folded && !hero.allIn) {
@@ -771,7 +773,7 @@ function renderCard(card, isHidden = false) {
   return el;
 }
 
-// ---------------- HAND EVALUATOR ----------------
+// ---------------- EVALUATOR ----------------
 function evaluate7Cards(cards) {
   if (cards.length < 5) return 0;
   const combos = getCombinations(cards, 5);
@@ -835,5 +837,5 @@ function evaluate5Cards(hand) {
   return ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
 }
 
-// Initialize
+// Init
 updateBankrollUI();
