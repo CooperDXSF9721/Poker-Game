@@ -5,12 +5,12 @@
 class BlackjackGame {
   constructor() {
     this.deck = [];
-    this.playerHands = []; // Array of hand objects for split support
+    this.playerHands = [];
     this.currentHandIndex = 0;
     this.dealerHand = [];
     this.insuranceBet = 0;
     this.currentBet = 100;
-    this.chips = 10000; // Unlimited / Free play starting stack
+    this.chips = 10000;
     this.gameStage = 'betting'; // 'betting', 'player_turn', 'dealer_turn', 'complete'
     
     this.initUI();
@@ -45,7 +45,6 @@ class BlackjackGame {
     const suits = ['♠', '♥', '♦', '♣'];
     const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
     this.deck = [];
-    // 6-Deck Shoe (Standard Casino)
     for (let d = 0; d < 6; d++) {
       for (let s of suits) {
         for (let v of values) {
@@ -56,7 +55,6 @@ class BlackjackGame {
         }
       }
     }
-    // Shuffle
     for (let i = this.deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
@@ -85,7 +83,10 @@ class BlackjackGame {
 
   startHand() {
     const betVal = parseInt(this.betInput ? this.betInput.value : 100, 10);
-    if (isNaN(betVal) || betVal <= 0) return;
+    if (isNaN(betVal) || betVal <= 0 || betVal > this.chips) {
+      if (this.msgEl) this.msgEl.textContent = "Invalid bet amount or insufficient chips!";
+      return;
+    }
 
     this.currentBet = betVal;
     this.createDeck();
@@ -94,7 +95,7 @@ class BlackjackGame {
     this.playerHands = [{
       cards: [this.drawCard(), this.drawCard()],
       bet: this.currentBet,
-      status: 'playing', // 'playing', 'bust', 'stood', 'blackjack'
+      status: 'playing',
       doubled: false
     }];
 
@@ -102,14 +103,12 @@ class BlackjackGame {
     this.currentHandIndex = 0;
     this.gameStage = 'player_turn';
 
-    // Check Insurance Option
     if (this.dealerHand[0].value === 'A') {
       this.msgEl.textContent = "Dealer shows Ace. Take Insurance?";
     } else {
-      this.msgEl.textContent = "Your turn: Hit, Stand, or Double?";
+      this.msgEl.textContent = "Your turn: Hit, Stand, Double, or Split?";
     }
 
-    // Check for Naturals
     const playerEval = this.getScore(this.playerHands[0].cards);
     if (playerEval.score === 21) {
       this.playerHands[0].status = 'blackjack';
@@ -168,9 +167,8 @@ class BlackjackGame {
 
     const c1 = currentHand.cards[0];
     const c2 = currentHand.cards[1];
-    if (c1.weight !== c2.weight) return; // Must be matching rank/value
+    if (c1.weight !== c2.weight) return;
 
-    // Split into two distinct hands
     const hand1 = { cards: [c1, this.drawCard()], bet: currentHand.bet, status: 'playing', doubled: false };
     const hand2 = { cards: [c2, this.drawCard()], bet: currentHand.bet, status: 'playing', doubled: false };
 
@@ -197,7 +195,6 @@ class BlackjackGame {
   playDealer() {
     this.gameStage = 'dealer_turn';
 
-    // Dealer hits on soft 17
     let dealerEval = this.getScore(this.dealerHand);
     while (dealerEval.score < 17 || (dealerEval.score === 17 && dealerEval.isSoft)) {
       this.dealerHand.push(this.drawCard());
@@ -213,7 +210,6 @@ class BlackjackGame {
     let netPayout = 0;
     let summaryMessages = [];
 
-    // Resolve Insurance
     if (this.insuranceBet > 0) {
       if (dealerEval.score === 21 && this.dealerHand.length === 2) {
         netPayout += this.insuranceBet * 2;
@@ -224,7 +220,6 @@ class BlackjackGame {
       }
     }
 
-    // Resolve Player Hands
     this.playerHands.forEach((hand, idx) => {
       const pEval = this.getScore(hand.cards);
       const handLabel = this.playerHands.length > 1 ? `Hand ${idx + 1}: ` : '';
@@ -262,7 +257,6 @@ class BlackjackGame {
   updateUI() {
     if (this.chipsEl) this.chipsEl.textContent = `$${this.chips.toLocaleString()}`;
 
-    // Render Dealer
     if (this.dealerCardsEl) {
       this.dealerCardsEl.innerHTML = '';
       this.dealerHand.forEach((card, idx) => {
@@ -279,7 +273,6 @@ class BlackjackGame {
       }
     }
 
-    // Render Player Hands
     if (this.playerContainer) {
       this.playerContainer.innerHTML = '';
       this.playerHands.forEach((hand, idx) => {
@@ -289,8 +282,8 @@ class BlackjackGame {
 
         const scoreEval = this.getScore(hand.cards);
         handDiv.innerHTML = `
-          <div class="hand-header">Hand ${idx + 1} (Bet: $${hand.bet}) - Score: ${scoreEval.score}</div>
-          <div class="cards-list"></div>
+          <div class="hand-header" style="margin-bottom: 5px;">Hand ${idx + 1} (Bet: $${hand.bet}) - Score: ${scoreEval.score}</div>
+          <div class="cards-list cards"></div>
         `;
 
         const cardsListEl = handDiv.querySelector('.cards-list');
@@ -299,7 +292,6 @@ class BlackjackGame {
       });
     }
 
-    // Controls Logic
     const isPlaying = this.gameStage === 'player_turn';
     const activeHand = this.playerHands[this.currentHandIndex];
 
@@ -329,12 +321,11 @@ class BlackjackGame {
     }
     const isRed = card.suit === '♥' || card.suit === '♦';
     el.className = `card ${isRed ? 'red' : 'black'}`;
-    el.innerHTML = `<div>${card.value}</div><div class="card-suit">${card.suit}</div>`;
+    el.innerHTML = `<div>${card.value}</div><div class="card-suit" style="align-self: flex-end;">${card.suit}</div>`;
     return el;
   }
 }
 
-// Initialize on Load
 window.addEventListener('DOMContentLoaded', () => {
   window.blackjackGame = new BlackjackGame();
 });
