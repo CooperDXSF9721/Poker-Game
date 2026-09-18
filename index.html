@@ -6,149 +6,8 @@
   <title>Casino Suite - Poker & Blackjack</title>
   <!-- PeerJS Library for Multiplayer Poker -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #0b2b0b;
-      color: #fff;
-      padding: 20px;
-    }
-    /* Navigation Bar */
-    .game-nav {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 20px;
-      background: rgba(0, 0, 0, 0.4);
-      padding: 10px;
-      border-radius: 8px;
-    }
-    .game-nav button {
-      padding: 12px 24px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      background: #1b4d1b;
-      color: white;
-      border: 1px solid #4caf50;
-      border-radius: 6px;
-      transition: background 0.2s ease;
-    }
-    .game-nav button:hover {
-      background: #2e8b57;
-    }
-    .game-nav button.active {
-      background: #4caf50;
-      color: #000;
-    }
-
-    /* Common Card Styles */
-    .cards {
-      display: flex;
-      gap: 10px;
-      min-height: 80px;
-      margin-top: 10px;
-    }
-    .card {
-      width: 55px;
-      height: 80px;
-      background: white;
-      color: black;
-      border-radius: 6px;
-      padding: 6px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      font-weight: bold;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    .card.red { color: #d00000; }
-    .card.black { color: #000; }
-    .card.back {
-      background: linear-gradient(135deg, #b00000, #600000);
-      border: 2px solid #fff;
-    }
-
-    /* Dashboard & Panel Boxes */
-    .panel {
-      background: rgba(0, 0, 0, 0.35);
-      padding: 15px;
-      border-radius: 8px;
-      margin-bottom: 15px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    /* Controls & Inputs */
-    button {
-      padding: 8px 16px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
-      border: none;
-      background: #ffb703;
-      color: #000;
-      transition: opacity 0.2s ease;
-    }
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    input[type="text"], input[type="number"] {
-      padding: 8px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      outline: none;
-    }
-
-    /* Blackjack Specific UI */
-    .bj-hand {
-      border: 1px dashed #4caf50;
-      padding: 12px;
-      margin-top: 10px;
-      border-radius: 6px;
-      background: rgba(0, 0, 0, 0.2);
-    }
-    .bj-hand.active-hand {
-      border-color: #ffb703;
-      background: rgba(255, 183, 3, 0.15);
-    }
-
-    /* Poker Specific UI */
-    .poker-lobby {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 15px;
-    }
-    .poker-table {
-      background: #145214;
-      border: 12px solid #5c3a21;
-      border-radius: 120px;
-      padding: 30px;
-      text-align: center;
-      margin-bottom: 20px;
-      position: relative;
-    }
-    .poker-players {
-      display: flex;
-      justify-content: space-around;
-      flex-wrap: wrap;
-      gap: 15px;
-      margin-top: 20px;
-    }
-    .poker-player-box {
-      background: rgba(0, 0, 0, 0.6);
-      padding: 10px;
-      border-radius: 8px;
-      min-width: 120px;
-      border: 1px solid #4caf50;
-    }
-  </style>
+  <!-- External CSS -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -185,9 +44,7 @@
       <div style="margin-top: 15px;">Pot: <strong id="poker-pot-val">$0</strong></div>
 
       <!-- Player Seats -->
-      <div id="poker-players-container" class="poker-players">
-        <!-- Dynamic player hands render here -->
-      </div>
+      <div id="poker-players-container" class="poker-players"></div>
     </div>
 
     <!-- Poker Action Controls -->
@@ -232,7 +89,7 @@
     </div>
   </div>
 
-  <!-- View Switcher Logic -->
+  <!-- View Switcher Script -->
   <script>
     function switchGame(mode) {
       const pokerEl = document.getElementById('poker-section');
@@ -254,8 +111,8 @@
     }
   </script>
 
-  <!-- Game Scripts -->
+  <!-- External JavaScript Files -->
   <script src="blackjack.js"></script>
-  <script src="poker.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>
