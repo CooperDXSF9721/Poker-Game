@@ -1,12 +1,12 @@
+// ==========================================
+// POKER ENGINE (REBUILT FROM SCRATCH)
+// ==========================================
+
 const SUITS = ['♠', '♥', '♦', '♣'];
 const VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 
 class Deck {
   constructor() {
-    this.cards = [];
-    this.reset();
-  }
-  reset() {
     this.cards = [];
     for (let suit of SUITS) {
       for (let value of VALUES) {
@@ -21,16 +21,12 @@ class Deck {
       [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
     }
   }
-  pop() { return this.cards.pop(); }
+  draw() { return this.cards.pop(); }
 }
 
-// ---------------- LOCAL STORAGE & BANKROLL ----------------
+// ---------------- BANKROLL MANAGEMENT ----------------
 const MAX_BANKROLL = 20000;
-let playerBankroll = parseInt(localStorage.getItem('poker_bankroll'), 10);
-
-if (isNaN(playerBankroll)) {
-  playerBankroll = 1000;
-}
+let playerBankroll = parseInt(localStorage.getItem('poker_bankroll'), 10) || 1000;
 playerBankroll = Math.min(playerBankroll, MAX_BANKROLL);
 localStorage.setItem('poker_bankroll', playerBankroll);
 
@@ -80,20 +76,24 @@ if (btnClaimBonus) {
   });
 }
 
-// ---------------- NETWORKING & GLOBAL GAME STATE ----------------
+function deductBuyIn(amount) {
+  playerBankroll -= amount;
+  initialBuyInPaid = amount;
+  localStorage.setItem('poker_bankroll', playerBankroll);
+  updateBankrollUI();
+}
+
+// ---------------- STATE ENGINE ----------------
 let peer = null;
 let connections = [];
 let hostConn = null;
 let isHost = false;
 let myPeerId = "";
 let myName = "Player";
-let hostDeck = null;
+let activeDeck = null;
 let currentSessionMode = 'ranked';
 let currentSessionBuyIn = 1000;
 let initialBuyInPaid = 0;
-
-let bigBlind = 20;
-let smallBlind = 10;
 
 let gameState = {
   mode: 'ranked',
@@ -109,10 +109,10 @@ let gameState = {
   activePlayerIndex: 0,
   lastRaiserIndex: -1,
   gameStage: 'idle',
-  message: 'Waiting for players to join...'
+  message: 'Waiting for players...'
 };
 
-// DOM Cache
+// DOM Elements
 const lobbyModal = document.getElementById('lobby-modal');
 const btnCreateRoom = document.getElementById('btn-create-room');
 const btnJoinRoom = document.getElementById('btn-join-room');
@@ -138,21 +138,18 @@ const messageBoard = document.getElementById('message-board');
 
 if (hostGameModeSelect) {
   hostGameModeSelect.addEventListener('change', () => {
-    if (hostGameModeSelect.value === 'quick') {
-      buyinLabel.textContent = "Collective Free Starting Chips ($):";
-    } else {
-      buyinLabel.textContent = "Table Buy-In ($):";
-    }
+    buyinLabel.textContent = hostGameModeSelect.value === 'quick' 
+      ? "Collective Free Starting Chips ($):" 
+      : "Table Buy-In ($):";
   });
 }
 
-// ---------------- PUBLIC MATCHMAKING ----------------
+// ---------------- MATCHMAKING & LOBBY ----------------
 document.querySelectorAll('.btn-public').forEach(btn => {
   btn.addEventListener('click', () => {
     const tier = btn.dataset.tier;
     const inputEl = document.getElementById(`public-buyin-${tier}`);
     let buyIn = parseInt(inputEl.value, 10);
-
     const min = parseInt(inputEl.min, 10);
     const max = parseInt(inputEl.max, 10);
 
@@ -160,7 +157,6 @@ document.querySelectorAll('.btn-public').forEach(btn => {
       lobbyStatus.textContent = `Buy-in must be between $${min.toLocaleString()} and $${max.toLocaleString()}!`;
       return;
     }
-
     joinPublicTable(buyIn);
   });
 });
@@ -171,7 +167,7 @@ function joinPublicTable(buyIn) {
   currentSessionBuyIn = buyIn;
 
   if (playerBankroll < buyIn) {
-    lobbyStatus.textContent = `Insufficient Bankroll! You need $${buyIn.toLocaleString()} to join.`;
+    lobbyStatus.textContent = `Insufficient Bankroll! Need $${buyIn.toLocaleString()}.`;
     return;
   }
 
@@ -179,11 +175,9 @@ function joinPublicTable(buyIn) {
   lobbyStatus.textContent = `Connecting to $${buyIn.toLocaleString()} Public Table...`;
 
   peer = new Peer();
-
   peer.on('open', (id) => {
     myPeerId = id;
     hostConn = peer.connect(publicRoomCode);
-
     let connected = false;
 
     hostConn.on('open', () => {
@@ -197,9 +191,7 @@ function joinPublicTable(buyIn) {
     hostConn.on('data', (data) => {
       if (data.type === 'SYNC') {
         gameState = data.state;
-        bigBlind = gameState.bigBlind;
-        smallBlind = gameState.smallBlind;
-        renderUI();
+        render();
       }
     });
 
@@ -211,9 +203,7 @@ function joinPublicTable(buyIn) {
     }, 1500);
   });
 
-  peer.on('error', () => {
-    hostPublicTable(publicRoomCode, buyIn);
-  });
+  peer.on('error', () => hostPublicTable(publicRoomCode, buyIn));
 }
 
 function hostPublicTable(roomCode, buyIn) {
@@ -228,54 +218,50 @@ function hostPublicTable(roomCode, buyIn) {
     displayRoomCode.textContent = roomCode;
     if (lobbyModal) lobbyModal.style.display = 'none';
 
-    setupTableBlinds(buyIn);
-
-    gameState.mode = 'ranked';
-    gameState.buyIn = buyIn;
-    gameState.bigBlind = bigBlind;
-    gameState.smallBlind = smallBlind;
-
-    gameState.players.push({
-      id: myPeerId,
-      name: myName,
-      chips: buyIn,
-      currentBet: 0,
-      hand: [],
-      folded: false,
-      allIn: false,
-      actedThisRound: false
-    });
-
-    renderUI();
+    setupBlinds(buyIn);
+    initGameState(buyIn, 'ranked');
+    addPlayerToState(myPeerId, myName, buyIn);
+    render();
   });
 
   peer.on('connection', (conn) => {
     connections.push(conn);
-    conn.on('data', (data) => handleHostReceiveData(conn, data));
+    conn.on('data', (data) => handleHostMessage(conn, data));
     conn.on('close', () => {
       gameState.players = gameState.players.filter(p => p.id !== conn.peer);
-      broadcastState();
+      syncAndRender();
     });
   });
+}
 
-  peer.on('error', () => {
-    lobbyStatus.textContent = "Room busy, retrying...";
+function setupBlinds(buyIn) {
+  gameState.bigBlind = Math.max(20, Math.floor(buyIn / 50));
+  gameState.smallBlind = Math.floor(gameState.bigBlind / 2);
+}
+
+function initGameState(buyIn, mode) {
+  gameState.mode = mode;
+  gameState.buyIn = buyIn;
+  gameState.players = [];
+  gameState.communityCards = [];
+  gameState.pot = 0;
+  gameState.gameStage = 'idle';
+  gameState.message = 'Waiting for players...';
+}
+
+function addPlayerToState(id, name, chips) {
+  gameState.players.push({
+    id,
+    name,
+    chips,
+    currentBet: 0,
+    hand: [],
+    folded: false,
+    allIn: false,
+    actedThisRound: false
   });
 }
 
-function setupTableBlinds(buyIn) {
-  bigBlind = Math.max(20, Math.floor(buyIn / 50));
-  smallBlind = Math.floor(bigBlind / 2);
-}
-
-function deductBuyIn(amount) {
-  playerBankroll -= amount;
-  initialBuyInPaid = amount;
-  localStorage.setItem('poker_bankroll', playerBankroll);
-  updateBankrollUI();
-}
-
-// ---------------- ROOM CREATION / JOINING ----------------
 if (btnCreateRoom) {
   btnCreateRoom.addEventListener('click', () => {
     myName = playerNameInput.value.trim() || "Host";
@@ -288,12 +274,8 @@ if (btnCreateRoom) {
     }
 
     if (currentSessionMode === 'ranked') {
-      if (currentSessionBuyIn > MAX_BANKROLL) {
-        lobbyStatus.textContent = `Maximum allowed buy-in is $${MAX_BANKROLL.toLocaleString()}!`;
-        return;
-      }
       if (playerBankroll < currentSessionBuyIn) {
-        lobbyStatus.textContent = `Insufficient bankroll! You need $${currentSessionBuyIn.toLocaleString()}.`;
+        lobbyStatus.textContent = `Need $${currentSessionBuyIn.toLocaleString()} bankroll!`;
         return;
       }
       deductBuyIn(currentSessionBuyIn);
@@ -301,42 +283,26 @@ if (btnCreateRoom) {
 
     isHost = true;
     lobbyStatus.textContent = "Creating room...";
-
     const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    peer = new Peer(roomCode);
 
+    peer = new Peer(roomCode);
     peer.on('open', (id) => {
       myPeerId = id;
       displayRoomCode.textContent = id;
       if (lobbyModal) lobbyModal.style.display = 'none';
 
-      setupTableBlinds(currentSessionBuyIn);
-
-      gameState.mode = currentSessionMode;
-      gameState.buyIn = currentSessionBuyIn;
-      gameState.bigBlind = bigBlind;
-      gameState.smallBlind = smallBlind;
-
-      gameState.players.push({
-        id: myPeerId,
-        name: myName,
-        chips: currentSessionBuyIn,
-        currentBet: 0,
-        hand: [],
-        folded: false,
-        allIn: false,
-        actedThisRound: false
-      });
-
-      renderUI();
+      setupBlinds(currentSessionBuyIn);
+      initGameState(currentSessionBuyIn, currentSessionMode);
+      addPlayerToState(myPeerId, myName, currentSessionBuyIn);
+      render();
     });
 
     peer.on('connection', (conn) => {
       connections.push(conn);
-      conn.on('data', (data) => handleHostReceiveData(conn, data));
+      conn.on('data', (data) => handleHostMessage(conn, data));
       conn.on('close', () => {
         gameState.players = gameState.players.filter(p => p.id !== conn.peer);
-        broadcastState();
+        syncAndRender();
       });
     });
   });
@@ -346,10 +312,10 @@ if (btnJoinRoom) {
   btnJoinRoom.addEventListener('click', () => {
     myName = playerNameInput.value.trim() || "Player";
     const code = joinCodeInput.value.trim().toUpperCase();
-    if (!code) { lobbyStatus.textContent = "Enter a valid code!"; return; }
+    if (!code) return;
 
     isHost = false;
-    lobbyStatus.textContent = "Connecting to room...";
+    lobbyStatus.textContent = "Connecting...";
 
     peer = new Peer();
     peer.on('open', (id) => {
@@ -357,40 +323,32 @@ if (btnJoinRoom) {
       hostConn = peer.connect(code);
 
       hostConn.on('open', () => {
-        hostConn.send({ type: 'REQUEST_JOIN_INFO' });
+        hostConn.send({ type: 'REQ_JOIN_INFO' });
       });
 
       hostConn.on('data', (data) => {
-        if (data.type === 'JOIN_REQUIREMENTS') {
-          currentSessionMode = data.mode;
-          currentSessionBuyIn = data.buyIn;
-
-          if (currentSessionMode === 'ranked') {
-            if (playerBankroll < currentSessionBuyIn) {
-              lobbyStatus.textContent = `Need $${currentSessionBuyIn.toLocaleString()} bankroll to join this room!`;
+        if (data.type === 'JOIN_INFO') {
+          if (data.mode === 'ranked') {
+            if (playerBankroll < data.buyIn) {
+              lobbyStatus.textContent = `Need $${data.buyIn.toLocaleString()} bankroll!`;
               peer.destroy();
               return;
             }
-            deductBuyIn(currentSessionBuyIn);
+            deductBuyIn(data.buyIn);
           }
-
           displayRoomCode.textContent = code;
           if (lobbyModal) lobbyModal.style.display = 'none';
           hostConn.send({ type: 'JOIN', name: myName, id: myPeerId });
         } else if (data.type === 'SYNC') {
           gameState = data.state;
-          bigBlind = gameState.bigBlind;
-          smallBlind = gameState.smallBlind;
-          renderUI();
+          render();
         }
       });
     });
   });
 }
 
-if (btnLeaveRoom) btnLeaveRoom.addEventListener('click', leaveTable);
-
-function leaveTable() {
+if (btnLeaveRoom) btnLeaveRoom.addEventListener('click', () => {
   if (currentSessionMode === 'ranked' && initialBuyInPaid > 0) {
     const hero = gameState.players.find(p => p.id === myPeerId);
     if (hero) {
@@ -399,10 +357,9 @@ function leaveTable() {
       updateBankrollUI();
     }
   }
-
   if (peer) peer.destroy();
   location.reload();
-}
+});
 
 if (btnCopyCode) {
   btnCopyCode.addEventListener('click', () => {
@@ -412,72 +369,71 @@ if (btnCopyCode) {
   });
 }
 
-// ---------------- STATE BROADCASTING ----------------
-function broadcastState() {
+// ---------------- HOST NETWORK HANDLER ----------------
+function syncAndRender() {
   if (!isHost) return;
-  
   connections.forEach(conn => {
-    const sanitizedState = JSON.parse(JSON.stringify(gameState));
+    const cleanState = JSON.parse(JSON.stringify(gameState));
     if (gameState.gameStage !== 'showdown') {
-      sanitizedState.players.forEach(p => {
+      cleanState.players.forEach(p => {
         if (p.id !== conn.peer) p.hand = p.hand.map(() => ({ hidden: true }));
       });
     }
-    conn.send({ type: 'SYNC', state: sanitizedState });
+    conn.send({ type: 'SYNC', state: cleanState });
   });
-
-  renderUI();
+  render();
 }
 
-function handleHostReceiveData(conn, data) {
-  if (data.type === 'REQUEST_JOIN_INFO') {
-    conn.send({ type: 'JOIN_REQUIREMENTS', mode: gameState.mode, buyIn: gameState.buyIn });
+function handleHostMessage(conn, data) {
+  if (data.type === 'REQ_JOIN_INFO') {
+    conn.send({ type: 'JOIN_INFO', mode: gameState.mode, buyIn: gameState.buyIn });
   } else if (data.type === 'JOIN') {
     if (gameState.gameStage !== 'idle') {
       conn.send({ type: 'SYNC', state: gameState });
       return;
     }
-    gameState.players.push({
-      id: data.id,
-      name: data.name,
-      chips: gameState.buyIn,
-      currentBet: 0,
-      hand: [],
-      folded: false,
-      allIn: false,
-      actedThisRound: false
-    });
-    gameState.message = `${data.name} joined the table.`;
-    broadcastState();
+    addPlayerToState(data.id, data.name, gameState.buyIn);
+    gameState.message = `${data.name} joined.`;
+    syncAndRender();
   } else if (data.type === 'ACTION') {
-    handlePlayerActionHost(data.id, data.action, data.totalBetTarget);
+    processPlayerAction(data.id, data.action, data.targetBet);
   }
 }
 
-// ---------------- BETTING ENGINE FIXES ----------------
+// ---------------- GAME FLOW CONTROL ----------------
 if (btnDeal) {
   btnDeal.addEventListener('click', () => {
     if (!isHost) return;
     const eligible = gameState.players.filter(p => p.chips > 0);
     if (eligible.length < 2) {
-      gameState.message = "Need at least 2 players with chips to start!";
-      broadcastState();
+      gameState.message = "Need at least 2 active players to start!";
+      syncAndRender();
       return;
     }
-    startNewHandHost();
+    startHand();
   });
 }
 
-function startNewHandHost() {
-  hostDeck = new Deck();
+function getNextPlayerIndex(currIdx) {
+  let idx = (currIdx + 1) % gameState.players.length;
+  let count = 0;
+  while ((gameState.players[idx].folded || gameState.players[idx].allIn) && count < gameState.players.length) {
+    idx = (idx + 1) % gameState.players.length;
+    count++;
+  }
+  return idx;
+}
+
+function startHand() {
+  activeDeck = new Deck();
   gameState.communityCards = [];
   gameState.pot = 0;
-  gameState.currentHighBet = bigBlind;
-  gameState.minRaiseAmount = bigBlind;
+  gameState.currentHighBet = gameState.bigBlind;
+  gameState.minRaiseAmount = gameState.bigBlind;
 
   gameState.players.forEach(p => {
     if (p.chips > 0) {
-      p.hand = [hostDeck.pop(), hostDeck.pop()];
+      p.hand = [activeDeck.draw(), activeDeck.draw()];
       p.currentBet = 0;
       p.folded = false;
       p.allIn = false;
@@ -488,109 +444,80 @@ function startNewHandHost() {
     }
   });
 
-  // Advance dealer index to next eligible player
+  // Advance Dealer
   do {
     gameState.dealerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
   } while (gameState.players[gameState.dealerIndex].chips <= 0);
 
-  const activePlayers = gameState.players.filter(p => !p.folded);
-  let sbIdx, bbIdx, UTGIdx;
+  const activeCount = gameState.players.filter(p => !p.folded).length;
+  let sbIdx, bbIdx, utgIdx;
 
-  if (activePlayers.length === 2) {
-    // 2 PLAYERS (HEADS UP) FIX:
-    // Dealer/Button IS Small Blind and acts FIRST pre-flop.
-    // Non-dealer IS Big Blind.
+  if (activeCount === 2) {
+    // Heads Up Rules: Dealer is SB and acts FIRST preflop
     sbIdx = gameState.dealerIndex;
-    bbIdx = (gameState.dealerIndex + 1) % gameState.players.length;
-    while (gameState.players[bbIdx].folded) {
-      bbIdx = (bbIdx + 1) % gameState.players.length;
-    }
-    UTGIdx = sbIdx; 
+    bbIdx = getNextPlayerIndex(sbIdx);
+    utgIdx = sbIdx;
   } else {
-    // 3+ PLAYERS RULES:
-    sbIdx = getNextActivePlayerIndex(gameState.dealerIndex);
-    bbIdx = getNextActivePlayerIndex(sbIdx);
-    UTGIdx = getNextActivePlayerIndex(bbIdx);
+    // 3+ Players: SB is after Dealer, BB is after SB, UTG is after BB
+    sbIdx = getNextPlayerIndex(gameState.dealerIndex);
+    bbIdx = getNextPlayerIndex(sbIdx);
+    utgIdx = getNextPlayerIndex(bbIdx);
   }
 
-  // Deduct Blinds & Record them as current bets
-  postBetHost(gameState.players[sbIdx], smallBlind);
-  postBetHost(gameState.players[bbIdx], bigBlind);
+  // Post Blinds
+  commitBet(gameState.players[sbIdx], gameState.smallBlind);
+  commitBet(gameState.players[bbIdx], gameState.bigBlind);
 
-  // Clear acted status for action loop
+  // Clear acted flag after blind placement
   gameState.players.forEach(p => p.actedThisRound = false);
 
-  gameState.activePlayerIndex = UTGIdx;
-  gameState.lastRaiserIndex = bbIdx; // BB is initial high bet
+  gameState.activePlayerIndex = utgIdx;
+  gameState.lastRaiserIndex = bbIdx;
   gameState.gameStage = 'preflop';
 
-  const firstActor = gameState.players[UTGIdx];
-  const toCall = gameState.currentHighBet - firstActor.currentBet;
-  const turnMessage = toCall === 0 ? "Option: CHECK or RAISE" : `To Call: $${toCall}`;
-  gameState.message = `Hand started! SB: ${gameState.players[sbIdx].name} ($${smallBlind}), BB: ${gameState.players[bbIdx].name} ($${bigBlind}). Turn: ${firstActor.name} (${turnMessage})`;
-
-  broadcastState();
+  updateTurnMessage();
+  syncAndRender();
 }
 
-function postBetHost(player, amount) {
-  const actualBet = Math.min(amount, player.chips);
-  player.chips -= actualBet;
-  player.currentBet += actualBet;
-  gameState.pot += actualBet;
-
-  if (player.chips === 0) {
-    player.allIn = true;
-  }
+function commitBet(player, amount) {
+  const actual = Math.min(amount, player.chips);
+  player.chips -= actual;
+  player.currentBet += actual;
+  gameState.pot += actual;
+  if (player.chips === 0) player.allIn = true;
 }
 
-function getNextActivePlayerIndex(fromIdx) {
-  let idx = (fromIdx + 1) % gameState.players.length;
-  let count = 0;
-  while ((gameState.players[idx].folded || gameState.players[idx].allIn) && count < gameState.players.length) {
-    idx = (idx + 1) % gameState.players.length;
-    count++;
-  }
-  return idx;
+function updateTurnMessage() {
+  const active = gameState.players[gameState.activePlayerIndex];
+  const toCall = Math.max(0, gameState.currentHighBet - active.currentBet);
+  const detailText = toCall === 0 ? "Option: CHECK or RAISE" : `To Call: $${toCall}`;
+  gameState.message = `Turn: ${active.name} (${detailText})`;
 }
 
-function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
+function processPlayerAction(playerId, action, targetBet = 0) {
   const player = gameState.players[gameState.activePlayerIndex];
   if (!player || player.id !== playerId) return;
 
-  const amountToCall = gameState.currentHighBet - player.currentBet;
+  const toCall = Math.max(0, gameState.currentHighBet - player.currentBet);
 
   if (action === 'fold') {
     player.folded = true;
-    gameState.message = `${player.name} folded.`;
   } else if (action === 'check') {
-    if (amountToCall > 0) {
-      gameState.message = "Cannot check when facing a bet!";
-      broadcastState();
-      return;
-    }
-    gameState.message = `${player.name} checked.`;
+    if (toCall > 0) return; // Disallow illegal check
   } else if (action === 'call') {
-    const callAmount = Math.min(amountToCall, player.chips);
-    postBetHost(player, callAmount);
-    gameState.message = `${player.name} called $${callAmount}.`;
+    commitBet(player, toCall);
   } else if (action === 'raise') {
-    const additionalChipsNeeded = totalBetTarget - player.currentBet;
+    const additional = targetBet - player.currentBet;
+    if (additional > player.chips) return;
 
-    if (additionalChipsNeeded > player.chips) {
-      gameState.message = "Error: Not enough chips!";
-      broadcastState();
-      return;
-    }
+    const raiseAmount = targetBet - gameState.currentHighBet;
+    commitBet(player, additional);
 
-    const raiseIncrement = totalBetTarget - gameState.currentHighBet;
-    postBetHost(player, additionalChipsNeeded);
-
-    gameState.minRaiseAmount = Math.max(bigBlind, raiseIncrement);
+    gameState.minRaiseAmount = Math.max(gameState.bigBlind, raiseAmount);
     gameState.currentHighBet = player.currentBet;
     gameState.lastRaiserIndex = gameState.activePlayerIndex;
-    gameState.message = `${player.name} raised to $${player.currentBet}.`;
 
-    // Re-open betting for everyone except current raiser
+    // Reset acted flag for everyone else active
     gameState.players.forEach((p, idx) => {
       if (idx !== gameState.activePlayerIndex && !p.folded && !p.allIn) {
         p.actedThisRound = false;
@@ -599,167 +526,141 @@ function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
   }
 
   player.actedThisRound = true;
-  moveToNextPlayerHost();
+  advanceTurn();
 }
 
-function moveToNextPlayerHost() {
-  const remainingPlayers = gameState.players.filter(p => !p.folded);
+function advanceTurn() {
+  const survivors = gameState.players.filter(p => !p.folded);
 
-  // Single survivor wins pot
-  if (remainingPlayers.length === 1) {
-    remainingPlayers[0].chips += gameState.pot;
-    gameState.message = `${remainingPlayers[0].name} wins $${gameState.pot}!`;
-    endHandHost();
+  if (survivors.length === 1) {
+    survivors[0].chips += gameState.pot;
+    gameState.message = `${survivors[0].name} wins $${gameState.pot}!`;
+    endHand();
     return;
   }
 
-  const playersCanAct = remainingPlayers.filter(p => !p.allIn);
-  const everyoneMatched = remainingPlayers.every(p => p.currentBet === gameState.currentHighBet || p.allIn);
-  const everyoneActed = playersCanAct.every(p => p.actedThisRound);
+  const activeUnallin = survivors.filter(p => !p.allIn);
+  const allMatched = survivors.every(p => p.currentBet === gameState.currentHighBet || p.allIn);
+  const allActed = activeUnallin.every(p => p.actedThisRound);
 
-  if (playersCanAct.length <= 1 && everyoneMatched) {
-    fastForwardToShowdownHost();
+  if (activeUnallin.length <= 1 && allMatched) {
+    autoCompleteHand();
     return;
   }
 
-  if (everyoneMatched && everyoneActed) {
-    advanceStageHost();
+  if (allMatched && allActed) {
+    nextStage();
   } else {
-    gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.activePlayerIndex);
-    const nextPlayer = gameState.players[gameState.activePlayerIndex];
-    const amountToCall = gameState.currentHighBet - nextPlayer.currentBet;
-    
-    // TEXT MESSAGING FIX: Differentiate between Call requirement vs Check Option
-    const turnDetail = amountToCall === 0 ? "Option: CHECK or RAISE" : `To Call: $${amountToCall}`;
-
-    gameState.message += ` Turn: ${nextPlayer.name} (${turnDetail})`;
-    broadcastState();
+    gameState.activePlayerIndex = getNextPlayerIndex(gameState.activePlayerIndex);
+    updateTurnMessage();
+    syncAndRender();
   }
 }
 
-function advanceStageHost() {
-  refundUncalledBetsHost();
+function nextStage() {
+  refundUncalledBets();
 
   gameState.players.forEach(p => {
     p.currentBet = 0;
     p.actedThisRound = false;
   });
   gameState.currentHighBet = 0;
-  gameState.minRaiseAmount = bigBlind;
+  gameState.minRaiseAmount = gameState.bigBlind;
 
   if (gameState.gameStage === 'preflop') {
     gameState.gameStage = 'flop';
-    gameState.communityCards.push(hostDeck.pop(), hostDeck.pop(), hostDeck.pop());
+    gameState.communityCards.push(activeDeck.draw(), activeDeck.draw(), activeDeck.draw());
   } else if (gameState.gameStage === 'flop') {
     gameState.gameStage = 'turn';
-    gameState.communityCards.push(hostDeck.pop());
+    gameState.communityCards.push(activeDeck.draw());
   } else if (gameState.gameStage === 'turn') {
     gameState.gameStage = 'river';
-    gameState.communityCards.push(hostDeck.pop());
+    gameState.communityCards.push(activeDeck.draw());
   } else if (gameState.gameStage === 'river') {
     gameState.gameStage = 'showdown';
-    resolveShowdownHost();
+    resolveWinners();
     return;
   }
 
-  // Post-Flop Action: Player AFTER dealer acts first
-  gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.dealerIndex);
-  gameState.lastRaiserIndex = gameState.activePlayerIndex;
-  
-  const activeName = gameState.players[gameState.activePlayerIndex].name;
-  gameState.message = `Stage: ${gameState.gameStage.toUpperCase()}. Action is on ${activeName}.`;
-
-  broadcastState();
+  // Post-flop: First player to act is always player AFTER dealer
+  gameState.activePlayerIndex = getNextPlayerIndex(gameState.dealerIndex);
+  updateTurnMessage();
+  syncAndRender();
 }
 
-function refundUncalledBetsHost() {
+function refundUncalledBets() {
   const active = gameState.players.filter(p => !p.folded);
   if (active.length <= 1) return;
 
-  const bets = active.map(p => p.currentBet).sort((a, b) => b - a);
-  const highestBet = bets[0];
-  const secondHighest = bets[1] || 0;
+  const sortedBets = active.map(p => p.currentBet).sort((a, b) => b - a);
+  const highest = sortedBets[0];
+  const second = sortedBets[1] || 0;
 
-  if (highestBet > secondHighest) {
-    const overbet = highestBet - secondHighest;
-    const overbettor = active.find(p => p.currentBet === highestBet);
+  if (highest > second) {
+    const diff = highest - second;
+    const overbettor = active.find(p => p.currentBet === highest);
     if (overbettor) {
-      overbettor.chips += overbet;
-      overbettor.currentBet -= overbet;
-      gameState.pot -= overbet;
-      gameState.currentHighBet = secondHighest;
+      overbettor.chips += diff;
+      overbettor.currentBet -= diff;
+      gameState.pot -= diff;
+      gameState.currentHighBet = second;
     }
   }
 }
 
-function fastForwardToShowdownHost() {
-  refundUncalledBetsHost();
+function autoCompleteHand() {
+  refundUncalledBets();
   while (gameState.communityCards.length < 5) {
-    gameState.communityCards.push(hostDeck.pop());
+    gameState.communityCards.push(activeDeck.draw());
   }
   gameState.gameStage = 'showdown';
-  resolveShowdownHost();
+  resolveWinners();
 }
 
-// ---------------- SHOWDOWN ----------------
-function resolveShowdownHost() {
-  const activePlayers = gameState.players.filter(p => !p.folded);
-  
-  activePlayers.forEach(p => {
-    p.handScore = evaluate7CardHand(p.hand.concat(gameState.communityCards));
+function resolveWinners() {
+  const contenders = gameState.players.filter(p => !p.folded);
+  contenders.forEach(p => {
+    p.score = evaluate7Cards(p.hand.concat(gameState.communityCards));
   });
 
-  activePlayers.sort((a, b) => b.handScore - a.handScore);
+  contenders.sort((a, b) => b.score - a.score);
+  const bestScore = contenders[0].score;
+  const winners = contenders.filter(p => p.score === bestScore);
 
-  let bestScore = activePlayers[0].handScore;
-  let winners = activePlayers.filter(p => p.handScore === bestScore);
-
-  const share = Math.floor(gameState.pot / winners.length);
-  winners.forEach(w => w.chips += share);
+  const splitPot = Math.floor(gameState.pot / winners.length);
+  winners.forEach(w => w.chips += splitPot);
 
   gameState.message = `Showdown! ${winners.map(w => w.name).join(', ')} wins $${gameState.pot}!`;
-  endHandHost();
+  endHand();
 }
 
-function endHandHost() {
+function endHand() {
   gameState.gameStage = 'idle';
-  broadcastState();
+  syncAndRender();
 }
 
-// ---------------- CONTROLS & EVENT LISTENERS ----------------
-if (btnFold) btnFold.addEventListener('click', () => sendAction('fold'));
-if (btnCheck) btnCheck.addEventListener('click', () => sendAction('check'));
-if (btnCall) btnCall.addEventListener('click', () => sendAction('call'));
+// ---------------- PLAYER ACTION CONTROLS ----------------
+if (btnFold) btnFold.addEventListener('click', () => dispatchAction('fold'));
+if (btnCheck) btnCheck.addEventListener('click', () => dispatchAction('check'));
+if (btnCall) btnCall.addEventListener('click', () => dispatchAction('call'));
 if (btnRaise) {
   btnRaise.addEventListener('click', () => {
-    const totalTarget = parseInt(raiseInput.value, 10);
-    const hero = gameState.players.find(p => p.id === myPeerId);
-
-    if (isNaN(totalTarget)) return;
-
-    const minTotalBet = gameState.currentHighBet === 0 ? bigBlind : gameState.currentHighBet + gameState.minRaiseAmount;
-    const maxTotalBet = hero.currentBet + hero.chips;
-
-    if (totalTarget < minTotalBet && totalTarget < maxTotalBet) {
-      alert(`Minimum total bet/raise amount is $${minTotalBet}!`);
-      raiseInput.value = Math.min(minTotalBet, maxTotalBet);
-      return;
-    }
-
-    sendAction('raise', totalTarget);
+    const targetBet = parseInt(raiseInput.value, 10);
+    if (isNaN(targetBet)) return;
+    dispatchAction('raise', targetBet);
   });
 }
 
-function sendAction(action, totalBetTarget = 0) {
+function dispatchAction(action, targetBet = 0) {
   if (isHost) {
-    handlePlayerActionHost(myPeerId, action, totalBetTarget);
+    processPlayerAction(myPeerId, action, targetBet);
   } else {
-    hostConn.send({ type: 'ACTION', id: myPeerId, action, totalBetTarget });
+    hostConn.send({ type: 'ACTION', id: myPeerId, action, targetBet });
   }
 }
 
-// ---------------- RENDER UI ----------------
-function renderUI() {
+// ---------------- UI RENDERING ----------------
+function render() {
   if (messageBoard) messageBoard.textContent = gameState.message;
   const potEl = document.getElementById('pot-amount');
   if (potEl) potEl.textContent = gameState.pot;
@@ -776,16 +677,16 @@ function renderUI() {
   gameState.players.forEach((p, idx) => {
     const isHero = p.id === myPeerId;
     const isTurn = idx === gameState.activePlayerIndex && gameState.gameStage !== 'idle';
-    
-    let statusText = "";
-    if (idx === gameState.dealerIndex) statusText += " (D)";
-    if (p.folded) statusText += " [FOLD]";
-    if (p.allIn) statusText += " [ALL-IN]";
+
+    let status = "";
+    if (idx === gameState.dealerIndex) status += " (D)";
+    if (p.folded) status += " [FOLD]";
+    if (p.allIn) status += " [ALL-IN]";
 
     if (isHero) {
       const heroBadge = document.getElementById('hero-name');
       if (heroBadge) {
-        heroBadge.textContent = `${p.name} (You)${statusText}`;
+        heroBadge.textContent = `${p.name} (You)${status}`;
         heroBadge.className = `status-badge ${isTurn ? 'active-turn' : ''}`;
       }
 
@@ -798,56 +699,58 @@ function renderUI() {
       const heroCardsEl = document.getElementById('hero-cards');
       if (heroCardsEl) {
         heroCardsEl.innerHTML = '';
-        p.hand.forEach(c => heroCardsEl.appendChild(createCardUI(c)));
+        p.hand.forEach(c => heroCardsEl.appendChild(renderCard(c)));
       }
     } else if (opponentsContainer) {
-      const oppDiv = document.createElement('div');
-      oppDiv.className = 'player-area';
-      oppDiv.innerHTML = `
-        <div class="status-badge ${isTurn ? 'active-turn' : ''}">${p.name}${statusText}</div>
+      const div = document.createElement('div');
+      div.className = 'player-area';
+      div.innerHTML = `
+        <div class="status-badge ${isTurn ? 'active-turn' : ''}">${p.name}${status}</div>
         <div class="cards" id="cards-opp-${idx}"></div>
         <div class="chips">Chips: $${p.chips}</div>
         <div class="bet">Bet: $${p.currentBet}</div>
       `;
-      opponentsContainer.appendChild(oppDiv);
+      opponentsContainer.appendChild(div);
 
-      const cardsEl = oppDiv.querySelector(`#cards-opp-${idx}`);
-      p.hand.forEach(c => cardsEl.appendChild(createCardUI(c, c.hidden)));
+      const cardsEl = div.querySelector(`#cards-opp-${idx}`);
+      p.hand.forEach(c => cardsEl.appendChild(renderCard(c, c.hidden)));
     }
   });
 
   const commEl = document.getElementById('community-cards');
   if (commEl) {
     commEl.innerHTML = '';
-    gameState.communityCards.forEach(c => commEl.appendChild(createCardUI(c)));
+    gameState.communityCards.forEach(c => commEl.appendChild(renderCard(c)));
   }
 
+  // Action Button States
   const isMyTurn = gameState.players[gameState.activePlayerIndex]?.id === myPeerId && gameState.gameStage !== 'idle';
-  
+
   if (isMyTurn && hero && !hero.folded && !hero.allIn) {
-    const amountToCall = gameState.currentHighBet - hero.currentBet;
+    const toCall = Math.max(0, gameState.currentHighBet - hero.currentBet);
 
     if (btnFold) btnFold.disabled = false;
+    if (btnCheck) btnCheck.disabled = toCall > 0;
     
-    // UI BUTTON FIX: Toggle Check/Call buttons cleanly
-    if (btnCheck) btnCheck.disabled = amountToCall > 0;
     if (btnCall) {
-      btnCall.disabled = amountToCall <= 0;
-      btnCall.textContent = amountToCall > 0 ? `Call $${Math.min(amountToCall, hero.chips)}` : 'Call';
+      btnCall.disabled = toCall <= 0;
+      btnCall.textContent = toCall > 0 ? `Call $${Math.min(toCall, hero.chips)}` : 'Call';
     }
 
-    const minRaiseTotal = gameState.currentHighBet === 0 ? bigBlind : gameState.currentHighBet + gameState.minRaiseAmount;
-    const maxRaiseTotal = hero.currentBet + hero.chips;
+    const minRaise = gameState.currentHighBet === 0 
+      ? gameState.bigBlind 
+      : gameState.currentHighBet + gameState.minRaiseAmount;
+    const maxRaise = hero.currentBet + hero.chips;
 
     if (raiseInput) {
-      raiseInput.min = minRaiseTotal;
-      raiseInput.step = bigBlind;
-      if (parseInt(raiseInput.value, 10) < minRaiseTotal) {
-        raiseInput.value = Math.min(minRaiseTotal, maxRaiseTotal);
+      raiseInput.min = minRaise;
+      raiseInput.step = gameState.bigBlind;
+      if (parseInt(raiseInput.value, 10) < minRaise) {
+        raiseInput.value = Math.min(minRaise, maxRaise);
       }
     }
 
-    if (btnRaise) btnRaise.disabled = hero.chips <= amountToCall;
+    if (btnRaise) btnRaise.disabled = hero.chips <= toCall;
   } else {
     if (btnFold) btnFold.disabled = true;
     if (btnCheck) btnCheck.disabled = true;
@@ -856,92 +759,81 @@ function renderUI() {
   }
 }
 
-function createCardUI(card, isHidden = false) {
-  const cardDiv = document.createElement('div');
+function renderCard(card, isHidden = false) {
+  const el = document.createElement('div');
   if (isHidden || !card || card.hidden) {
-    cardDiv.className = 'card back';
-    return cardDiv;
+    el.className = 'card back';
+    return el;
   }
   const isRed = card.suit === '♥' || card.suit === '♦';
-  cardDiv.className = `card ${isRed ? 'red' : 'black'}`;
-  cardDiv.innerHTML = `
-    <div>${card.value}</div>
-    <div class="card-suit">${card.suit}</div>
-  `;
-  return cardDiv;
+  el.className = `card ${isRed ? 'red' : 'black'}`;
+  el.innerHTML = `<div>${card.value}</div><div class="card-suit">${card.suit}</div>`;
+  return el;
 }
 
-// ---------------- HAND EVALUATION ----------------
-function evaluate7CardHand(cards) {
+// ---------------- HAND EVALUATOR ----------------
+function evaluate7Cards(cards) {
   if (cards.length < 5) return 0;
-  const combinations = kCombinations(cards, 5);
-  let maxScore = -1;
-
-  combinations.forEach(combo => {
-    const score = evaluate5CardHand(combo);
-    if (score > maxScore) maxScore = score;
+  const combos = getCombinations(cards, 5);
+  let best = -1;
+  combos.forEach(c => {
+    const score = evaluate5Cards(c);
+    if (score > best) best = score;
   });
-
-  return maxScore;
+  return best;
 }
 
-function kCombinations(set, k) {
+function getCombinations(set, k) {
   if (k > set.length || k <= 0) return [];
   if (k === set.length) return [set];
   if (k === 1) return set.map(e => [e]);
-
-  const combos = [];
+  const result = [];
   for (let i = 0; i < set.length - k + 1; i++) {
     const head = set.slice(i, i + 1);
-    const tailCombos = kCombinations(set.slice(i + 1), k - 1);
-    tailCombos.forEach(tail => combos.push(head.concat(tail)));
+    const tailCombos = getCombinations(set.slice(i + 1), k - 1);
+    tailCombos.forEach(tail => result.push(head.concat(tail)));
   }
-  return combos;
+  return result;
 }
 
-function evaluate5CardHand(hand) {
+function evaluate5Cards(hand) {
   const ranks = hand.map(c => VALUES.indexOf(c.value)).sort((a, b) => b - a);
   const suits = hand.map(c => c.suit);
-
   const isFlush = suits.every(s => s === suits[0]);
-  
+
   let isStraight = false;
-  let straightHighRank = -1;
+  let straightHigh = -1;
 
   if (new Set(ranks).size === 5) {
     if (ranks[0] - ranks[4] === 4) {
       isStraight = true;
-      straightHighRank = ranks[0];
+      straightHigh = ranks[0];
     } else if (ranks[0] === 12 && ranks[1] === 3 && ranks[2] === 2 && ranks[3] === 1 && ranks[4] === 0) {
       isStraight = true;
-      straightHighRank = 3; 
+      straightHigh = 3;
     }
   }
 
   const counts = {};
   ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
+  const sortedCounts = Object.entries(counts)
+    .map(([r, c]) => ({ rank: parseInt(r, 10), count: c }))
+    .sort((a, b) => b.count - a.count || b.rank - a.rank);
 
-  const freqEntries = Object.entries(counts).map(([rank, count]) => ({
-    rank: parseInt(rank, 10),
-    count
-  }));
+  const r1 = sortedCounts[0].rank;
+  const r2 = sortedCounts[1] ? sortedCounts[1].rank : 0;
 
-  freqEntries.sort((a, b) => b.count - a.count || b.rank - a.rank);
-
-  const primaryRank = freqEntries[0].rank;
-  const secondaryRank = freqEntries[1] ? freqEntries[1].rank : 0;
-
-  if (isStraight && isFlush) return 800000 + straightHighRank;
-  if (freqEntries[0].count === 4) return 700000 + primaryRank * 100 + secondaryRank;
-  if (freqEntries[0].count === 3 && freqEntries[1]?.count === 2) return 600000 + primaryRank * 100 + secondaryRank;
+  if (isStraight && isFlush) return 800000 + straightHigh;
+  if (sortedCounts[0].count === 4) return 700000 + r1 * 100 + r2;
+  if (sortedCounts[0].count === 3 && sortedCounts[1]?.count === 2) return 600000 + r1 * 100 + r2;
   if (isFlush) return 500000 + ranks[0] * 1000 + ranks[1] * 100 + ranks[2] * 10 + ranks[3];
-  if (isStraight) return 400000 + straightHighRank;
-  if (freqEntries[0].count === 3) return 300000 + primaryRank * 100 + ranks[3];
-  if (freqEntries[0].count === 2 && freqEntries[1]?.count === 2) return 200000 + primaryRank * 100 + secondaryRank * 10 + freqEntries[2].rank;
-  if (freqEntries[0].count === 2) return 100000 + primaryRank * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
+  if (isStraight) return 400000 + straightHigh;
+  if (sortedCounts[0].count === 3) return 300000 + r1 * 100 + ranks[3];
+  if (sortedCounts[0].count === 2 && sortedCounts[1]?.count === 2) return 200000 + r1 * 100 + r2 * 10 + sortedCounts[2].rank;
+  if (sortedCounts[0].count === 2) return 100000 + r1 * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
 
   return ranks[0] * 10000 + ranks[1] * 1000 + ranks[2] * 100 + ranks[3] * 10 + ranks[4];
 }
 
-// Boot
+// Initialize
 updateBankrollUI();
