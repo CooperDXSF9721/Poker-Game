@@ -6,53 +6,139 @@
 
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #0b2b0b;
-  color: #fff;
+  background-color: #0f380f;
+  color: #ffffff;
   padding: 20px;
-}
-
-/* Navigation Bar */
-.game-nav {
   display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
+  justify-content: center;
+}
+
+.container {
+  max-width: 1000px;
+  width: 100%;
+}
+
+h1, h2, h3 {
+  text-align: center;
+  margin-bottom: 15px;
+}
+
+.panel {
   background: rgba(0, 0, 0, 0.4);
-  padding: 10px;
-  border-radius: 8px;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.game-nav button {
-  padding: 12px 24px;
-  font-size: 16px;
-  font-weight: bold;
-  cursor: pointer;
+/* Stakes Selection & Lobby */
+.stakes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.stake-card {
   background: #1b4d1b;
-  color: white;
-  border: 1px solid #4caf50;
-  border-radius: 6px;
-  transition: background 0.2s ease;
+  border: 2px solid #4caf50;
+  border-radius: 8px;
+  padding: 15px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
 }
 
-.game-nav button:hover {
+.stake-card:hover {
+  transform: translateY(-3px);
   background: #2e8b57;
 }
 
-.game-nav button.active {
-  background: #4caf50;
-  color: #000;
+.stake-card.selected {
+  border-color: #ffb703;
+  background: #2e8b57;
 }
 
-/* Playing Cards */
-.cards {
+/* Connection Controls */
+.lobby-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  align-items: center;
+}
+
+.input-group {
   display: flex;
   gap: 10px;
-  min-height: 80px;
-  margin-top: 10px;
+  width: 100%;
+  max-width: 500px;
+}
+
+input[type="text"], input[type="number"] {
+  flex: 1;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  outline: none;
+  font-size: 16px;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 5px;
+  border: none;
+  background: #ffb703;
+  color: #000;
+  transition: opacity 0.2s;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Table Setup */
+.poker-table {
+  background: #145214;
+  border: 15px solid #5c3a21;
+  border-radius: 150px;
+  padding: 40px;
+  text-align: center;
+  position: relative;
+  min-height: 380px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.table-info {
+  font-size: 18px;
+  font-weight: bold;
+  color: #ffb703;
+}
+
+.community-cards-container {
+  margin: 20px 0;
+}
+
+/* Cards Layout */
+.cards {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  min-height: 85px;
 }
 
 .card {
-  width: 55px;
-  height: 80px;
+  width: 58px;
+  height: 85px;
   background: white;
   color: black;
   border-radius: 6px;
@@ -61,94 +147,47 @@ body {
   flex-direction: column;
   justify-content: space-between;
   font-weight: bold;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  font-size: 16px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.4);
 }
 
 .card.red { color: #d00000; }
-.card.black { color: #000; }
+.card.black { color: #000000; }
 .card.back {
   background: linear-gradient(135deg, #b00000, #600000);
-  border: 2px solid #fff;
+  border: 2px solid #ffffff;
 }
 
-/* Dashboard & Panels */
-.panel {
-  background: rgba(0, 0, 0, 0.35);
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Controls & Inputs */
-button {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: bold;
-  cursor: pointer;
-  border-radius: 4px;
-  border: none;
-  background: #ffb703;
-  color: #000;
-  transition: opacity 0.2s ease;
-}
-
-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-input[type="text"], input[type="number"] {
-  padding: 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-  outline: none;
-}
-
-/* Blackjack Elements */
-.bj-hand {
-  border: 1px dashed #4caf50;
-  padding: 12px;
-  margin-top: 10px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.bj-hand.active-hand {
-  border-color: #ffb703;
-  background: rgba(255, 183, 3, 0.15);
-}
-
-/* Poker Elements */
-.poker-lobby {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.poker-table {
-  background: #145214;
-  border: 12px solid #5c3a21;
-  border-radius: 120px;
-  padding: 30px;
-  text-align: center;
-  margin-bottom: 20px;
-  position: relative;
-}
-
-.poker-players {
+/* Seats Layout */
+.players-grid {
   display: flex;
   justify-content: space-around;
   flex-wrap: wrap;
   gap: 15px;
-  margin-top: 20px;
 }
 
-.poker-player-box {
-  background: rgba(0, 0, 0, 0.6);
-  padding: 10px;
+.player-seat {
+  background: rgba(0, 0, 0, 0.75);
+  border: 2px solid #4caf50;
   border-radius: 8px;
-  min-width: 120px;
-  border: 1px solid #4caf50;
+  padding: 10px;
+  min-width: 140px;
+  text-align: center;
+}
+
+.player-seat.active-turn {
+  border-color: #ffb703;
+  box-shadow: 0 0 10px #ffb703;
+}
+
+.player-seat.folded {
+  opacity: 0.5;
+}
+
+.action-bar {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 15px;
 }
