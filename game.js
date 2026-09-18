@@ -473,18 +473,26 @@ function startNewHandHost() {
     }
   });
 
+  // Advance dealer index to next eligible player
   do {
     gameState.dealerIndex = (gameState.dealerIndex + 1) % gameState.players.length;
   } while (gameState.players[gameState.dealerIndex].chips <= 0);
 
-  const activeList = gameState.players.filter(p => !p.folded);
+  const activePlayers = gameState.players.filter(p => !p.folded);
   let sbIdx, bbIdx, UTGIdx;
 
-  if (activeList.length === 2) {
+  if (activePlayers.length === 2) {
+    // HEADS-UP RULES:
+    // Dealer/Button = Small Blind (acts FIRST preflop, LAST postflop)
+    // Other player = Big Blind
     sbIdx = gameState.dealerIndex;
-    bbIdx = getNextActivePlayerIndex(sbIdx);
-    UTGIdx = sbIdx;
+    bbIdx = (gameState.dealerIndex + 1) % gameState.players.length;
+    while (gameState.players[bbIdx].folded) {
+      bbIdx = (bbIdx + 1) % gameState.players.length;
+    }
+    UTGIdx = sbIdx; // Small blind acts first preflop in heads-up
   } else {
+    // 3+ PLAYERS RULES:
     sbIdx = getNextActivePlayerIndex(gameState.dealerIndex);
     bbIdx = getNextActivePlayerIndex(sbIdx);
     UTGIdx = getNextActivePlayerIndex(bbIdx);
@@ -493,14 +501,17 @@ function startNewHandHost() {
   postBetHost(gameState.players[sbIdx], smallBlind);
   postBetHost(gameState.players[bbIdx], bigBlind);
 
-  // Mark blind posters as needing to act unless they went all in
-  gameState.players[sbIdx].actedThisRound = false;
-  gameState.players[bbIdx].actedThisRound = false;
+  // Blinds are posted automatically; players must act on their turn
+  gameState.players.forEach(p => p.actedThisRound = false);
 
   gameState.activePlayerIndex = UTGIdx;
-  gameState.lastRaiserIndex = bbIdx;
+  gameState.lastRaiserIndex = bbIdx; // Big blind set initial target
   gameState.gameStage = 'preflop';
-  gameState.message = `Hand started! SB: ${gameState.players[sbIdx].name} ($${smallBlind}), BB: ${gameState.players[bbIdx].name} ($${bigBlind}). Action: ${gameState.players[UTGIdx].name}`;
+
+  const firstActor = gameState.players[UTGIdx];
+  const toCall = gameState.currentHighBet - firstActor.currentBet;
+  const turnMessage = toCall === 0 ? "Option to Check or Raise" : `To Call: $${toCall}`;
+  gameState.message = `Hand started! SB: ${gameState.players[sbIdx].name} ($${smallBlind}), BB: ${gameState.players[bbIdx].name} ($${bigBlind}). Turn: ${firstActor.name} (${turnMessage})`;
 
   broadcastState();
 }
@@ -563,7 +574,7 @@ function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
     gameState.lastRaiserIndex = gameState.activePlayerIndex;
     gameState.message = `${player.name} raised to $${player.currentBet}.`;
 
-    // Reset acted status for other active non-all-in players on a raise
+    // Re-open action for active players
     gameState.players.forEach((p, idx) => {
       if (idx !== gameState.activePlayerIndex && !p.folded && !p.allIn) {
         p.actedThisRound = false;
@@ -578,6 +589,7 @@ function handlePlayerActionHost(playerId, action, totalBetTarget = 0) {
 function moveToNextPlayerHost() {
   const remainingPlayers = gameState.players.filter(p => !p.folded);
   
+  // Single survivor wins pot
   if (remainingPlayers.length === 1) {
     remainingPlayers[0].chips += gameState.pot;
     gameState.message = `${remainingPlayers[0].name} wins $${gameState.pot}!`;
@@ -589,16 +601,22 @@ function moveToNextPlayerHost() {
   const everyoneMatched = remainingPlayers.every(p => p.currentBet === gameState.currentHighBet || p.allIn);
   const everyoneActed = playersCanAct.every(p => p.actedThisRound);
 
+  // All-in fast forward
   if (playersCanAct.length <= 1 && everyoneMatched) {
     fastForwardToShowdownHost();
     return;
   }
 
+  // Complete round when everyone has acted and bets are matched
   if (everyoneMatched && everyoneActed) {
     advanceStageHost();
   } else {
     gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.activePlayerIndex);
-    gameState.message += ` Turn: ${gameState.players[gameState.activePlayerIndex].name}`;
+    const nextPlayer = gameState.players[gameState.activePlayerIndex];
+    const amountToCall = gameState.currentHighBet - nextPlayer.currentBet;
+    const turnDetail = amountToCall === 0 ? "Option to Check or Raise" : `To Call: $${amountToCall}`;
+
+    gameState.message += ` Turn: ${nextPlayer.name} (${turnDetail})`;
     broadcastState();
   }
 }
@@ -628,9 +646,12 @@ function advanceStageHost() {
     return;
   }
 
+  // Post-Flop Action Order: Next active player AFTER dealer acts first
   gameState.activePlayerIndex = getNextActivePlayerIndex(gameState.dealerIndex);
   gameState.lastRaiserIndex = gameState.activePlayerIndex;
-  gameState.message = `Stage: ${gameState.gameStage.toUpperCase()}. Action is on ${gameState.players[gameState.activePlayerIndex].name}.`;
+  
+  const activeName = gameState.players[gameState.activePlayerIndex].name;
+  gameState.message = `Stage: ${gameState.gameStage.toUpperCase()}. Action is on ${activeName}.`;
 
   broadcastState();
 }
@@ -699,7 +720,7 @@ btnRaise.addEventListener('click', () => {
 
   if (isNaN(totalTarget)) return;
 
-  const minTotalBet = gameState.currentHighBet + gameState.minRaiseAmount;
+  const minTotalBet = gameState.currentHighBet === 0 ? bigBlind : gameState.currentHighBet + gameState.minRaiseAmount;
   const maxTotalBet = hero.currentBet + hero.chips;
 
   if (totalTarget < minTotalBet && totalTarget < maxTotalBet) {
