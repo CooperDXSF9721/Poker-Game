@@ -12,19 +12,7 @@
   <!-- Main Menu / Lobby Modal -->
   <div id="lobby-modal">
     <div class="lobby-box">
-      <h2>Texas Hold'em</h2>
-      
-      <!-- Profile & Bankroll Header -->
-      <div id="profile-card">
-        <div class="bankroll-info">
-          <span>Bankroll:</span>
-          <strong id="menu-chip-count">$1,000</strong>
-        </div>
-        <div id="bonus-status-container">
-          <button id="btn-claim-bonus" class="bonus-btn" style="display: none;">Claim Bonus (+$1,000)!</button>
-          <span id="bonus-timer" class="sub-text"></span>
-        </div>
-      </div>
+      <h2>Texas Hold'em (Testing Mode)</h2>
 
       <div class="input-group">
         <label>Your Display Name:</label>
@@ -36,28 +24,28 @@
       <!-- Public Rooms Selection -->
       <div class="lobby-section">
         <h3>Public Matchmaking Tables</h3>
-        <p class="sub-text">Pick your buy-in within the range using your Bankroll.</p>
+        <p class="sub-text">Enter any buy-in amount to join or create a table.</p>
         
         <div class="public-tier">
-          <label>Low Stakes ($500 - $2,000)</label>
+          <label>Low Stakes</label>
           <div class="tier-input-group">
-            <input type="number" id="public-buyin-low" min="500" max="2000" step="100" value="500">
+            <input type="number" id="public-buyin-low" min="1" step="100" value="500">
             <button class="btn btn-public" data-tier="low">Play Low</button>
           </div>
         </div>
 
         <div class="public-tier">
-          <label>Mid Stakes ($2,000 - $5,000)</label>
+          <label>Mid Stakes</label>
           <div class="tier-input-group">
-            <input type="number" id="public-buyin-mid" min="2000" max="5000" step="500" value="2000">
+            <input type="number" id="public-buyin-mid" min="1" step="500" value="2000">
             <button class="btn btn-public" data-tier="mid">Play Mid</button>
           </div>
         </div>
 
         <div class="public-tier">
-          <label>High Stakes ($5,000 - $20,000)</label>
+          <label>High Stakes</label>
           <div class="tier-input-group">
-            <input type="number" id="public-buyin-high" min="5000" max="20000" step="1000" value="5000">
+            <input type="number" id="public-buyin-high" min="1" step="1000" value="5000">
             <button class="btn btn-public" data-tier="high">Play High</button>
           </div>
         </div>
@@ -68,17 +56,10 @@
       <!-- Custom Host Game Options -->
       <div class="lobby-section">
         <h3>Host Private Room</h3>
-        <div class="input-group">
-          <label>Chip Mode:</label>
-          <select id="host-game-mode">
-            <option value="ranked">Use Real Bankroll</option>
-            <option value="quick">Quick Match (Free Starting Chips)</option>
-          </select>
-        </div>
         
         <div class="input-group" id="buyin-input-group">
           <label id="buyin-label">Table Buy-In ($):</label>
-          <input type="number" id="host-buyin-input" min="100" step="100" value="1000">
+          <input type="number" id="host-buyin-input" min="1" step="100" value="1000">
         </div>
 
         <button id="btn-create-room" class="btn lg">Create Private Room</button>
